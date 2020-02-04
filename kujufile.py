@@ -291,7 +291,7 @@ def _parse(s):
         for token in itokens:
             if state == State.NORMAL:
                 if isinstance(token, StringToken):
-                    # Don't push strings immediately because they could be names.
+                    # Don't push strings immediately, they might be names.
                     last = Scalar(token.value)
                     state = State.STRING_L
                 elif (isinstance(token, IntegerToken)
@@ -327,7 +327,7 @@ def _parse(s):
                     raise ParserException(token, 'unexpected token')
             elif state == State.SCALAR_L:
                 if isinstance(token, StringToken):
-                    # Don't push strings immediately because they could be names.
+                    # Don't push strings immediately, they might be names.
                     last = Scalar(token.value)
                     state = State.STRING_L
                 elif (isinstance(token, IntegerToken)
