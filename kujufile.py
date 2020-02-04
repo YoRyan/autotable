@@ -60,23 +60,28 @@ class Object(Node):
         return len(self.items)
 
     def __getitem__(self, key):
-        """When indexed by integer, an Object will return the i'th (by source
+        """When indexed by integer, this function will return the i'th (by source
         order) descendant, whether string, number, or Object. When indexed by
         string, it will return a list of all descendant Objects with a matching
-        name. As a convenience, if the requested name is exclusive to a single
-        Object, then it will return that Object directly instead of wrapping it
-        in a list.
+        name.
+
+        As a convenience, if the requested name is exclusive to a single Object,
+        then this function will return that Object directly instead of wrapping
+        it in a list. In addition, if said Object consists of a single item, then
+        this function will return that item directly instead of wrapping it in an
+        Object.
         """
         if isinstance(key, int):
             return self.items[key]
         elif isinstance(key, str):
             sel = [item for item in self.items
-                   if isinstance(item, Object) and item.name == key]
+                   if isinstance(item, Object) and item.name.lower() == key.lower()]
             if sel == []:
                 raise KeyError
             elif len(sel) == 1:
                 item = sel[0]
-                if isinstance(item, Object) and len(item) == 1:
+                if (isinstance(item, Object) and len(item) == 1
+                        and not isinstance(item[0], Object)):
                     return Object._evaluate(item[0])
                 else:
                     return Object._evaluate(item)
@@ -148,7 +153,7 @@ def _parse(s):
     @dataclass
     class HeaderToken(Token):
         string: str
-        RE = r'SIMISA@@@@@@@@@@JINX0(\w)0t______'
+        RE = r'SIMISA@@@@@@@@@@JINX0(\w)(\d)t______'
         def __post_init__(self):
             assert HeaderToken.match(self.string)
         def __repr__(self):
