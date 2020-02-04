@@ -67,20 +67,19 @@ class Object(Node):
         Object, then it will return that Object directly instead of wrapping it
         in a list.
         """
-        def one_or_all(item):
-            if isinstance(item, Object) and len(item) == 1:
-                return item[0]
-            else:
-                return item
         if isinstance(key, int):
-            return one_or_all(self.items[key])
+            return self.items[key]
         elif isinstance(key, str):
             sel = [item for item in self.items
                    if isinstance(item, Object) and item.name == key]
             if sel == []:
                 raise KeyError
             elif len(sel) == 1:
-                return Object._evaluate(one_or_all(sel[0]))
+                item = sel[0]
+                if isinstance(item, Object) and len(item) == 1:
+                    return Object._evaluate(item[0])
+                else:
+                    return Object._evaluate(item)
             else:
                 return [Object._evaluate(item) for item in sel]
 
