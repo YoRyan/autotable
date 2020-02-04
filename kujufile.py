@@ -4,6 +4,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from enum import Enum
+from itertools import chain
 from re import match
 
 
@@ -21,7 +22,12 @@ class ParserException(Exception):
 
 
 def load(fp):
-    pass
+    """Deserialize the file-like object ``fp``."""
+    return parser(lexer(chain.from_iterable(fp)))
+
+def loads(s):
+    """Deserialize the string ``s``."""
+    return parser(lexer(s))
 
 
 class Token:
@@ -170,8 +176,21 @@ class Node:
 
 @dataclass
 class Object(Node):
+    """A dict-like container denoted by parantheses in MSTS data files.
+
+    Examples:
+
+    Name ("Acela Express trainset")
+
+    Wagon (
+            WagonData ( AcelaEndCar Acela )
+            UiD ( 1 )
+    )
+    """
+
     name: str
     items: list
+
     def __repr__(self):
         def indent(text):
             idnt = ' '*8
@@ -185,9 +204,18 @@ class Object(Node):
             return (f'{self.name} (\n'
                     + '\n'.join(indent(str(item)) for item in self.items)
                     + '\n)')
+
     def __len__(self):
         return len(self.items)
+
     def __getitem__(self, key):
+        """When indexed by integer, an Object will return the i'th (by source
+        order) descendant, whether string, number, or Object. When indexed by
+        string, it will return a list of all descendant Objects with a matching
+        name. As a convenience, if the requested name is exclusive to a single
+        Object, then it will return that Object directly instead of wrapping it
+        in a list.
+        """
         def one_or_all(item):
             if isinstance(item, Object) and len(item) == 1:
                 return item[0]
@@ -204,9 +232,16 @@ class Object(Node):
                 return Object._evaluate(one_or_all(sel[0]))
             else:
                 return [Object._evaluate(item) for item in sel]
+
     def values(self):
+        """Get a list of all descendants that are not other Objects.
+
+        Preserves source order, but provides no information about the positions
+        of excluded Objects.
+        """
         sel = [item for item in self.items if not isinstance(item, Object)]
         return [Object._evaluate(item) for item in sel]
+
     def _evaluate(item):
         if isinstance(item, Object):
             return item
