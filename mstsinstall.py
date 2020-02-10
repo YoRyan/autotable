@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from pathlib import Path
 
 import kujufile as kf
@@ -18,7 +17,6 @@ class MSTSInstall:
 class Route:
     def __init__(self, path: Path, encoding=ENCODING):
         df = ichild(path, f'{path.name}.trk')
-        print(df)
         with open(df, encoding=ENCODING) as fp:
             d = kf.load(fp)
         desc = d['Tr_RouteFile']
@@ -37,10 +35,7 @@ class Consist:
 
         self.path = path
         self.id = str(config.values()[0])
-        try:
-            self.name = str(config['Name'])
-        except KeyError:
-            self.name = None
+        self.name = str(config['Name']) if 'Name' in config else None
 
 def ichild(path, name): return next(child for child in path.iterdir()
                                     if child.name.lower() == name.lower())

@@ -88,6 +88,10 @@ class Object(Node):
             else:
                 return [Object._evaluate(item) for item in sel]
 
+    def __contains__(self, item):
+        return any(isinstance(i, Object) and i.name.lower() == item.lower()
+                   for i in self.items)
+
     def values(self):
         """Get a list of all descendants that are not other Objects.
 
