@@ -194,7 +194,7 @@ def _parse(s):
         def __repr__(self):
             return self.value.__repr__()
 
-    def _lexer(chars):
+    def lexer(chars):
         class State(Enum):
             NORMAL = 0
             LITERAL = 10
@@ -288,7 +288,7 @@ def _parse(s):
         if lexeme is not None:
             yield evaluate()
 
-    def _parens(itokens):
+    def parens(itokens):
         class State(Enum):
             NORMAL = 0
             STRING_L = 1
@@ -313,7 +313,7 @@ def _parse(s):
                     raise ParserException(token, 'unexpected token')
             elif state == State.STRING_L:
                 if isinstance(token, LParenToken):
-                    yield Object(last.value, list(_parens(itokens)))
+                    yield Object(last.value, list(parens(itokens)))
                     last = None
                     state = State.NORMAL
                 elif isinstance(token, StringToken):
@@ -365,9 +365,9 @@ def _parse(s):
             else:
                 assert False
 
-    tokens = _lexer(s)
+    tokens = lexer(s)
     first = next(tokens)
     if not isinstance(first, HeaderToken):
         raise ParserException(first, 'first token wasn\'t a SIMISA@@@ header')
-    return Object('', list(_parens(tokens)))
+    return Object('', list(parens(tokens)))
 
