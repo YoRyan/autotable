@@ -1,5 +1,8 @@
+from collections import defaultdict, namedtuple
 from functools import lru_cache
 from pathlib import Path
+
+import pyproj as pp
 
 import kujufile as kf
 
@@ -29,6 +32,27 @@ class Route:
             self.end = desc['TrPathEnd']
             self.player = desc['TrPathFlags'] & 0x20 == 0
 
+    class PlatformItem:
+        def __init__(self, data: kf.Object):
+            self.name = data['PlatformName']
+            self.station = data['Station']
+
+            rdata = data['TrItemRData'].values()
+            self.elevation_m = rdata[1]
+
+            # Conversion is abridged from Open Rails
+            # (Orts.Common.WorldLatLon.ConvertWTC)
+            radius_m = 6370997
+            tile_m = 2048
+            ul_y = 8673000
+            ul_x = -20015000
+            ns_offset = 16385
+            ew_offset = -ns_offset
+            y = ul_y - (ns_offset - rdata[4] - 1)*tile_m + rdata[2]
+            x = ul_x + (rdata[3] - ew_offset - 1)*tile_m + rdata[0]
+            goode = pp.CRS.from_proj4(f'+proj=igh +R={radius_m}')
+            self.latlon = pp.transform(goode, pp.Proj('epsg:4326'), x, y)
+
     def __init__(self, path: Path, encoding=ENCODING):
         df = ichild(path, f'{path.name}.trk')
         with open(df, encoding=encoding) as fp:
@@ -46,14 +70,17 @@ class Route:
         return hash((self.path, self.id))
 
     @lru_cache(maxsize=1)
-    def stations(self):
+    def stations(self) -> dict:
         df = ichild(self.path, f'{self._filename}.tit')
         with open(df, encoding=self._encoding) as fp:
             d = kf.load(fp)
         table = d['TrItemTable']
 
-        return list(set(str(pi['Station']) for pi in table['PlatformItem']
-                        if 'Station' in pi and pi['Station'] != ''))
+        platforms = [Route.PlatformItem(pi) for pi in table['PlatformItem']]
+        res = defaultdict(list)
+        for platform in platforms:
+            res[platform.station].append(platform)
+        return res
 
     def paths(self):
         return [Route.Path(child, encoding=self._encoding)

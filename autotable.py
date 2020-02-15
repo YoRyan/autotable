@@ -108,8 +108,9 @@ def _map_stations(route: Route, feed: gk.feed.Feed, stop_ids: list) -> dict:
         return res['stop_name'].values[0]
 
     station_map = {}
+    route_stations = list(route.stations().keys())
     for stop_id in stop_ids:
-        matches = get_close_matches(stop_name(stop_id), route.stations())
+        matches = get_close_matches(stop_name(stop_id), route_stations)
         n = len(matches)
         if n == 0:
             station_map[stop_id] = None
