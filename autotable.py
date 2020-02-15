@@ -1,12 +1,12 @@
 import datetime as dt
 import re
 import yaml
-from collections import namedtuple
-from difflib import get_close_matches
+from collections import Counter, namedtuple
 from functools import lru_cache
 from pathlib import Path
 
 import gtfs_kit as gk
+import pyproj as pp
 
 from mstsinstall import MSTSInstall, Route
 
@@ -102,15 +102,31 @@ def _stops_and_times(feed: gk.feed.Feed, date: dt.date, trip_id: str) -> list:
 
 
 def _map_stations(route: Route, feed: gk.feed.Feed, stop_ids: list) -> dict:
-    feed_stops = feed.get_stops()
-    def stop_name(stop_id: str):
-        res = feed_stops[feed_stops['stop_id'] == stop_id]
-        return res['stop_name'].values[0]
+    @lru_cache(maxsize=64)
+    def tokens(s: str) -> list: return re.split('[ \t:;,-]+', s.lower())
 
+    word_frequency = Counter(
+        sum((tokens(s_name) for s_name in route.stations().keys()), []))
+    def similarity(a: str, b: str) -> float:
+        intersect = set(tokens(a)) & set(tokens(b))
+        return sum(1/word_frequency[token] if token in word_frequency else 0.0
+                   for token in intersect)
+
+    geod = pp.Geod(ellps='WGS84')
+    def dist_km(a: tuple, b: tuple) -> float:
+        lat_a, lon_a = a
+        lat_b, lon_b = b
+        _azf, _azb, dist = geod.inv(lon_a, lat_a, lon_b, lat_b)
+        return dist/1000.0
+
+    feed_stops = feed.get_stops()
     station_map = {}
-    route_stations = list(route.stations().keys())
     for stop_id in stop_ids:
-        matches = get_close_matches(stop_name(stop_id), route_stations)
+        _, stop = next(feed_stops[feed_stops['stop_id'] == stop_id].iterrows())
+        latlon = (stop['stop_lat'], stop['stop_lon'])
+        matches = [s_name for s_name, s_list in route.stations().items()
+                   if (similarity(stop['stop_name'], s_name) >= 1.0
+                       and dist_km(s_list[0].latlon, latlon) < 10)]
         n = len(matches)
         if n == 0:
             station_map[stop_id] = None
@@ -118,6 +134,6 @@ def _map_stations(route: Route, feed: gk.feed.Feed, stop_ids: list) -> dict:
             station_map[stop_id] = matches[0]
         else:
             raise KeyError(
-                f'ambiguous station: {station}\npotential candidates: {matches}')
+                f"ambiguous station: '{name}' - candidates: {matches}")
     return station_map
 
