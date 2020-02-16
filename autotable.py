@@ -40,9 +40,9 @@ def load_config(fp, install: MSTSInstall) -> Timetable:
 
         # Select all filtered trips.
         group_trips = \
-            {idx: set(trip_id for _, trip_id in _select(
+            {i: set(trip_id for _, trip_id in _select(
                  feed_trips, group.get('selection', {}))['trip_id'].iteritems())
-             for idx, group in enumerate(block['groups'])}
+             for i, group in enumerate(block['groups'])}
         trips_sat = {trip_id: list(_stops_and_times(feed, trip_id))
                      for trip_id in chain(*group_trips.values())}
 
@@ -52,27 +52,34 @@ def load_config(fp, install: MSTSInstall) -> Timetable:
         station_map = _map_stations(route, feed, unique_everseen(all_stops))
 
         # Add all Trips to Timetable.
-        for idx, trips in group_trips.items():
-            for trip_id in trips:
-                stops = [Stop(station=station_map[stop_id],
-                              arrival=arrival,
-                              departure=departure,
-                              commands='')
-                         for stop_id, arrival, departure in trips_sat[trip_id]
-                         if station_map.get(stop_id, None) is not None]
-                if len(stops) < 2:
-                    continue
-                _, trip = next(
-                    feed_trips[feed_trips['trip_id'] == trip_id].iterrows())
-                group = block['groups'][idx]
-                tt.trips[(feed_path, trip_id)] = Trip(
-                    name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
-                    path=group['path'],
-                    consist=group['consist'],
-                    stops=stops,
-                    start_offset=group.get('start', -120),
-                    note=group.get('note', ''),
-                    dispose_commands=group.get('dispose', ''))
+        for _, trip in feed_trips[feed_trips['trip_id']
+                .isin(chain(*group_trips.values()))].iterrows():
+            stops = [Stop(station=station_map[stop_id],
+                          arrival=arrival,
+                          departure=departure,
+                          commands='')
+                     for stop_id, arrival, departure in trips_sat[trip['trip_id']]
+                     if station_map.get(stop_id, None) is not None]
+            if len(stops) < 2:
+                continue
+
+            path = consist = note = dispose = ''
+            start = -120
+            for group in (group for i, group in enumerate(block['groups'])
+                          if trip['trip_id'] in group_trips[i]):
+                path = group['path']
+                consist = group['consist']
+                start = group.get('start', start)
+                note = group.get('note', note)
+                dispose = group.get('dispose', dispose)
+            tt.trips[(feed_path, trip['trip_id'])] = Trip(
+                name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
+                path=path,
+                consist=consist,
+                stops=stops,
+                start_offset=start,
+                note=note,
+                dispose_commands=dispose)
     return tt
 
 
