@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from concurrent.futures import ProcessPoolExecutor
 from collections import defaultdict, namedtuple
 from functools import lru_cache
 from pathlib import Path
@@ -81,7 +82,8 @@ class Route:
             d = kf.load(fp)
         table = d['TrItemTable']
 
-        platforms = [Route.PlatformItem(pi) for pi in table['PlatformItem']]
+        with ProcessPoolExecutor() as executor:
+            platforms = executor.map(Route.PlatformItem, table['PlatformItem'])
         res = defaultdict(list)
         for platform in platforms:
             res[platform.station].append(platform)
