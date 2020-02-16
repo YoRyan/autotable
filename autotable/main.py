@@ -1,7 +1,7 @@
+# -*- coding: utf-8 -*-
 import csv
 import datetime as dt
 import re
-import yaml
 from argparse import ArgumentParser
 from collections import Counter, namedtuple
 from functools import lru_cache
@@ -13,9 +13,10 @@ import gtfs_kit as gk
 import pandas as pd
 import pyproj as pp
 import requests
+import yaml
 from more_itertools import take, unique_everseen
 
-from mstsinstall import MSTSInstall, Route
+from autotable.mstsinstall import MSTSInstall, Route
 
 
 _GTFS_UNITS = 'm'

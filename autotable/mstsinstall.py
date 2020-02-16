@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 from collections import defaultdict, namedtuple
 from functools import lru_cache
 from pathlib import Path
 
 import pyproj as pp
 
-import kujufile as kf
+import autotable.kujufile as kf
 
 
 ENCODING = 'utf-16'
