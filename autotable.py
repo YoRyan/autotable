@@ -6,13 +6,18 @@ from collections import Counter, namedtuple
 from functools import lru_cache
 from itertools import chain
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import gtfs_kit as gk
 import pandas as pd
 import pyproj as pp
+import requests
 from more_itertools import take, unique_everseen
 
 from mstsinstall import MSTSInstall, Route
+
+
+_GTFS_UNITS = 'm'
 
 
 class Timetable:
@@ -89,11 +94,17 @@ def load_config(fp, install: MSTSInstall) -> Timetable:
     route = next(r for r in install.routes if r.id.lower() == yd['route'].lower())
     tt = Timetable(route, yd['date'], yd['name'])
     for block in yd['gtfs']:
-        feed_path = block['filename']
-        feed = _load_gtfs(feed_path)
-        feed_trips = _get_trips(feed, yd['date'])
+        if block.get('file', ''):
+            feed_path = block['file']
+            feed = _read_gtfs(feed_path)
+        elif block.get('url', ''):
+            feed_path = block['url']
+            feed = _download_gtfs(feed_path)
+        else:
+            raise RuntimeError("GTFS block missing a 'file' or 'url'")
 
         # Select all filtered trips.
+        feed_trips = _get_trips(feed, yd['date'])
         group_trips = \
             {i: set(trip_id for _, trip_id in _select(
                  feed_trips, group.get('selection', {}))['trip_id'].iteritems())
@@ -138,9 +149,19 @@ def load_config(fp, install: MSTSInstall) -> Timetable:
     return tt
 
 
-@lru_cache(maxsize=None)
-def _load_gtfs(path: Path) -> gk.feed.Feed:
-    return gk.read_gtfs(path, dist_units='m') # Units don't matter (for now?).
+@lru_cache(maxsize=8)
+def _read_gtfs(path: Path) -> gk.feed.Feed:
+    return gk.read_gtfs(path, dist_units=_GTFS_UNITS)
+
+
+@lru_cache(maxsize=8)
+def _download_gtfs(url: str) -> gk.feed.Feed:
+    with NamedTemporaryFile() as tf:
+        with requests.get(url, stream=True) as req:
+            for chunk in req.iter_content(chunk_size=128):
+                tf.write(chunk)
+        tf.seek(0)
+        return gk.read_gtfs(tf.name, dist_units=_GTFS_UNITS)
 
 
 def _get_trips(feed: gk.feed.Feed, date: dt.date) -> pd.DataFrame:
