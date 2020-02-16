@@ -16,6 +16,7 @@ from mstsinstall import MSTSInstall, Route
 
 
 class Timetable:
+
     def __init__(self, route: Route, date: dt.date, name: str):
         self.route = route
         self.date = date
@@ -23,10 +24,64 @@ class Timetable:
         self.trips = {} # (gtfs path, trip id) -> Trip
         self.station_commands = {}
 
+    def write_csv(self, fp):
+        # csv settings per the Open Rails manual, 11.2.1 "Data definition"
+        # https://open-rails.readthedocs.io/en/latest/timetable.html#data-definition
+        writer = csv.writer(fp, delimiter=';', quoting=csv.QUOTE_NONE)
+
+        ordered_trips = list(self.trips.values())
+        ordered_stations = list(self.route.stations().keys())
+
+        def start_time(trip: Trip) -> dt.time:
+            return _add_to_time(
+                trip.stops[0].arrival, dt.timedelta(seconds=trip.start_offset))
+
+        def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
+
+        writer.writerow(chain(iter(('', '', '#comment')),
+                              (trip.name for trip in ordered_trips)))
+        writer.writerow(iter(('#comment', '', self.name)))
+        writer.writerow(chain(iter(('#path', '', '')),
+                              (trip.path for trip in ordered_trips)))
+        writer.writerow(chain(iter(('#consist', '', '')),
+                              (trip.consist for trip in ordered_trips)))
+        writer.writerow(chain(iter(('#start', '', '')),
+                              (strftime(start_time(trip)) for trip in ordered_trips)))
+        writer.writerow(chain(iter(('#note', '', '')),
+                              (trip.note for trip in ordered_trips)))
+
+        stops_index = {}
+        for i, trip in enumerate(ordered_trips):
+            for stop in trip.stops:
+                stops_index[(i, stop.station)] = stop
+
+        def station_stops(s_name: str):
+            for i, trip in enumerate(ordered_trips):
+                stop = stops_index.get((i, s_name), None)
+                if stop is None:
+                    yield ''
+                elif (stop.arrival.hour == stop.departure.hour
+                        and stop.arrival.minute == stop.departure.minute):
+                    yield strftime(stop.arrival)
+                else:
+                    yield f'{strftime(stop.arrival)}-{strftime(stop.departure)}'
+
+        writer.writerow([])
+        for s_name in ordered_stations:
+            writer.writerow(
+                chain(iter((s_name, self.station_commands.get(s_name, ''), '')),
+                      station_stops(s_name)))
+        writer.writerow([])
+
+        writer.writerow(chain(iter(('#dispose', '', '')),
+                              (trip.dispose_commands for trip in ordered_trips)))
+
+
 Trip = namedtuple('Trip', ['name', 'stops', 'path', 'consist',
                            'start_offset', 'note', 'dispose_commands'])
 
 Stop = namedtuple('Stop', ['station', 'arrival', 'departure', 'commands'])
+
 
 
 def load_config(fp, install: MSTSInstall) -> Timetable:
@@ -152,59 +207,6 @@ def _map_stations(route: Route, feed: gk.feed.Feed, stop_ids: iter) -> dict:
                 f"ambiguous station: '{name}' - candidates: {matches}")
         station_map[stop['stop_id']] = station
     return station_map
-
-
-def write_csv(tt: Timetable, fp):
-    # csv settings per the Open Rails manual, 11.2.1 "Data definition"
-    # https://open-rails.readthedocs.io/en/latest/timetable.html#data-definition
-    writer = csv.writer(fp, delimiter=';', quoting=csv.QUOTE_NONE)
-
-    ordered_trips = list(tt.trips.values())
-    ordered_stations = list(tt.route.stations().keys())
-
-    def start_time(trip: Trip) -> dt.time:
-        return _add_to_time(
-            trip.stops[0].arrival, dt.timedelta(seconds=trip.start_offset))
-
-    def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
-
-    writer.writerow(chain(iter(('', '', '#comment')),
-                          (trip.name for trip in ordered_trips)))
-    writer.writerow(iter(('#comment', '', tt.name)))
-    writer.writerow(chain(iter(('#path', '', '')),
-                          (trip.path for trip in ordered_trips)))
-    writer.writerow(chain(iter(('#consist', '', '')),
-                          (trip.consist for trip in ordered_trips)))
-    writer.writerow(chain(iter(('#start', '', '')),
-                          (strftime(start_time(trip)) for trip in ordered_trips)))
-    writer.writerow(chain(iter(('#note', '', '')),
-                          (trip.note for trip in ordered_trips)))
-
-    stops_index = {}
-    for i, trip in enumerate(ordered_trips):
-        for stop in trip.stops:
-            stops_index[(i, stop.station)] = stop
-
-    def station_stops(s_name: str):
-        for i, trip in enumerate(ordered_trips):
-            stop = stops_index.get((i, s_name), None)
-            if stop is None:
-                yield ''
-            elif (stop.arrival.hour == stop.departure.hour
-                    and stop.arrival.minute == stop.departure.minute):
-                yield strftime(stop.arrival)
-            else:
-                yield f'{strftime(stop.arrival)}-{strftime(stop.departure)}'
-
-    writer.writerow([])
-    for s_name in ordered_stations:
-        writer.writerow(
-            chain(iter((s_name, tt.station_commands.get(s_name, ''), '')),
-                  station_stops(s_name)))
-    writer.writerow([])
-
-    writer.writerow(chain(iter(('#dispose', '', '')),
-                          (trip.dispose_commands for trip in ordered_trips)))
 
 
 def _add_to_time(t: dt.time, td: dt.timedelta) -> dt.time:
