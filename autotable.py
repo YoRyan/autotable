@@ -10,7 +10,7 @@ from pathlib import Path
 import gtfs_kit as gk
 import pandas as pd
 import pyproj as pp
-from more_itertools import unique_everseen
+from more_itertools import take, unique_everseen
 
 from mstsinstall import MSTSInstall, Route
 
@@ -130,20 +130,20 @@ def _map_stations(route: Route, feed: gk.feed.Feed, stop_ids: iter) -> dict:
 
     feed_stops = feed.get_stops()
     station_map = {}
-    for stop_id in stop_ids:
-        _, stop = next(feed_stops[feed_stops['stop_id'] == stop_id].iterrows())
+    for _, stop in feed_stops[feed_stops['stop_id'].isin(stop_ids)].iterrows():
         latlon = (stop['stop_lat'], stop['stop_lon'])
-        matches = [s_name for s_name, s_list in route.stations().items()
-                   if (similarity(stop['stop_name'], s_name) >= 1.0
-                       and dist_km(s_list[0].latlon, latlon) < 10)]
+        matches = list(take(2, (s_name for s_name, s_list in route.stations().items()
+                                if (similarity(stop['stop_name'], s_name) >= 1.0
+                                    and dist_km(s_list[0].latlon, latlon) < 10))))
         n = len(matches)
         if n == 0:
-            station_map[stop_id] = None
+            station = None
         elif n == 1:
-            station_map[stop_id] = matches[0]
+            station = matches[0]
         else:
             raise KeyError(
                 f"ambiguous station: '{name}' - candidates: {matches}")
+        station_map[stop['stop_id']] = station
     return station_map
 
 
