@@ -8,7 +8,7 @@ from itertools import chain
 from re import match
 
 
-class ParserException(Exception):
+class ParserException(RuntimeError):
     def __init__(self, subject, message):
         self.subject = subject
         self.message = message

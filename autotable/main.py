@@ -109,6 +109,8 @@ def main():
 def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
     yd = yaml.safe_load(fp)
     route = next(r for r in install.routes if r.id.lower() == yd['route'].lower())
+    route_paths = set(path.id.lower() for path in route.paths())
+    all_consists = set(consist.id.lower() for consist in install.consists())
     tt = Timetable(route, yd['date'], name)
     for block in yd['gtfs']:
         if block.get('file', ''):
@@ -119,6 +121,17 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             feed = _download_gtfs(feed_path)
         else:
             raise RuntimeError("GTFS block missing a 'file' or 'url'")
+
+        # Validate the path and consist fields, which are mandatory.
+        for group in block['groups']:
+            if 'path' not in group:
+                raise RuntimeError("trips block missing a 'path'")
+            elif group['path'].lower() not in route_paths:
+                raise RuntimeError(f"unknown {route.id} path '{group['path']}'")
+            elif 'consist' not in group:
+                raise RuntimeError("trips block missing a 'consist'")
+            elif group['consist'].lower() not in all_consists:
+                raise RuntimeError(f"unknown consist '{group['consist']}'")
 
         # Select all filtered trips.
         feed_trips = _get_trips(feed, yd['date'])

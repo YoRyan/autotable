@@ -14,10 +14,13 @@ class MSTSInstall:
     def __init__(self, path: Path, encoding=ENCODING):
         self.path = path
         self.routes = \
-            [Route(child) for child in ichild(self.path, 'routes').iterdir()]
-        self.consists = \
-            [Consist(child) for child in ichild(ichild(self.path, 'trains'),
-                                                'consists').iterdir()]
+            [Route(child) for child in _ichild(self.path, 'routes').iterdir()]
+
+    @lru_cache(maxsize=1)
+    def consists(self) -> list:
+        return [Consist(child) for child
+                in _ichild(_ichild(self.path, 'trains'), 'consists').iterdir()]
+
 
 class Route:
     class Path:
@@ -31,7 +34,8 @@ class Route:
             self.name = desc['Name']
             self.start = desc['TrPathStart']
             self.end = desc['TrPathEnd']
-            self.player = desc['TrPathFlags'] & 0x20 == 0
+            self.player = (desc['TrPathFlags'] & 0x20 == 0
+                           if 'TrPathFlags' in desc else True)
 
     class PlatformItem:
         def __init__(self, data: kf.Object):
@@ -55,7 +59,7 @@ class Route:
             self.latlon = pp.transform(goode, pp.Proj('epsg:4326'), x, y)
 
     def __init__(self, path: Path, encoding=ENCODING):
-        df = ichild(path, f'{path.name}.trk')
+        df = _ichild(path, f'{path.name}.trk')
         with open(df, encoding=encoding) as fp:
             d = kf.load(fp)
         desc = d['Tr_RouteFile']
@@ -72,7 +76,7 @@ class Route:
 
     @lru_cache(maxsize=1)
     def stations(self) -> dict:
-        df = ichild(self.path, f'{self._filename}.tit')
+        df = _ichild(self.path, f'{self._filename}.tit')
         with open(df, encoding=self._encoding) as fp:
             d = kf.load(fp)
         table = d['TrItemTable']
@@ -83,10 +87,12 @@ class Route:
             res[platform.station].append(platform)
         return res
 
-    def paths(self):
+    @lru_cache(maxsize=1)
+    def paths(self) -> list:
         return [Route.Path(child, encoding=self._encoding)
-                for child in ichild(self.path, 'paths').iterdir()
+                for child in _ichild(self.path, 'paths').iterdir()
                 if child.suffix.lower() == '.pat']
+
 
 class Consist:
     def __init__(self, path: Path, encoding=ENCODING):
@@ -98,6 +104,7 @@ class Consist:
         self.id = str(config.values()[0])
         self.name = str(config['Name']) if 'Name' in config else None
 
-def ichild(path, name): return next(child for child in path.iterdir()
-                                    if child.name.lower() == name.lower())
+
+def _ichild(path, name): return next(child for child in path.iterdir()
+                                     if child.name.lower() == name.lower())
 
