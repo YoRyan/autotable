@@ -230,7 +230,7 @@ def _map_stations(
     def tokens(s: str) -> list: return re.split('[ \t:;,-]+', s.lower())
 
     word_frequency = Counter(
-        sum((tokens(s_name) for s_name in route.stations().keys()), []))
+        chain(*(tokens(s_name) for s_name in route.stations().keys())))
     def similarity(a: str, b: str) -> float:
         intersect = set(tokens(a)) & set(tokens(b))
         return sum(1/word_frequency[token] if token in word_frequency else 0.0
