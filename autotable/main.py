@@ -145,7 +145,8 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         # Collect and map all station names.
         all_stops = chain(*((stop_id for stop_id, _, _ in stops)
                             for stops in trips_sat.values()))
-        station_map = _map_stations(route, feed, unique_everseen(all_stops))
+        station_map = _map_stations(route, feed, unique_everseen(all_stops),
+                                    init_map=yd.get('station_map', {}))
 
         # Add all Trips to Timetable.
         for _, trip in feed_trips[feed_trips['trip_id']
@@ -223,7 +224,8 @@ def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
             for _, row in trip.sort_values(by='stop_sequence').iterrows())
 
 
-def _map_stations(route: Route, feed: gk.feed.Feed, stop_ids: iter) -> dict:
+def _map_stations(
+        route: Route, feed: gk.feed.Feed, stop_ids: iter, init_map: dict={}) -> dict:
     @lru_cache(maxsize=64)
     def tokens(s: str) -> list: return re.split('[ \t:;,-]+', s.lower())
 
@@ -241,23 +243,26 @@ def _map_stations(route: Route, feed: gk.feed.Feed, stop_ids: iter) -> dict:
         _, _, dist = geod.inv(lon_a, lat_a, lon_b, lat_b)
         return dist/1000.0
 
-    feed_stops = feed.get_stops()
-    station_map = {}
-    for _, stop in feed_stops[feed_stops['stop_id'].isin(stop_ids)].iterrows():
-        latlon = (stop['stop_lat'], stop['stop_lon'])
-        matches = list(take(2, (s_name for s_name, s_list in route.stations().items()
-                                if (similarity(stop['stop_name'], s_name) >= 1.0
-                                    and dist_km(s_list[0].latlon, latlon) < 10))))
-        n = len(matches)
-        if n == 0:
-            station = None
-        elif n == 1:
-            station = matches[0]
+    def map_station(stop: pd.Series) -> str:
+        if stop['stop_id'] in init_map:
+            return init_map[stop['stop_id']]
         else:
-            raise KeyError(
-                f"ambiguous station: '{name}' - candidates: {matches}")
-        station_map[stop['stop_id']] = station
-    return station_map
+            latlon = (stop['stop_lat'], stop['stop_lon'])
+            matches = \
+                list(take(2, (s_name for s_name, s_list in route.stations().items()
+                              if (similarity(stop['stop_name'], s_name) >= 1.0
+                                  and dist_km(s_list[0].latlon, latlon) < 10))))
+            n = len(matches)
+            if n == 0:
+                return None
+            elif n == 1:
+                return matches[0]
+            else:
+                raise RuntimeError(
+                    f"ambiguous station: '{name}' - candidates: {matches}")
+    feed_stops = feed.get_stops()
+    return {stop['stop_id']: map_station(stop) for _, stop
+            in feed_stops[feed_stops['stop_id'].isin(stop_ids)].iterrows()}
 
 
 def _add_to_time(t: dt.time, td: dt.timedelta) -> dt.time:
