@@ -2,6 +2,7 @@ import csv
 import datetime as dt
 import re
 import yaml
+from argparse import ArgumentParser
 from collections import Counter, namedtuple
 from functools import lru_cache
 from itertools import chain
@@ -51,7 +52,8 @@ class Timetable:
         writer.writerow(chain(iter(('#consist', '', '')),
                               (trip.consist for trip in ordered_trips)))
         writer.writerow(chain(iter(('#start', '', '')),
-                              (strftime(start_time(trip)) for trip in ordered_trips)))
+                              (strftime(start_time(trip))
+                               for trip in ordered_trips)))
         writer.writerow(chain(iter(('#note', '', '')),
                               (trip.note for trip in ordered_trips)))
 
@@ -88,11 +90,25 @@ Trip = namedtuple('Trip', ['name', 'stops', 'path', 'consist',
 Stop = namedtuple('Stop', ['station', 'arrival', 'departure', 'commands'])
 
 
+def main():
+    parser = ArgumentParser(
+        description='Generate Open Rails timetables from GTFS data.')
+    parser.add_argument('msts', type=Path,
+                        help='path to MSTS installation or mini-route')
+    parser.add_argument('yaml', type=Path,
+                        help='path to YAML timetable definition file')
+    args = parser.parse_args()
 
-def load_config(fp, install: MSTSInstall) -> Timetable:
+    with open(args.yaml, 'rt') as fp:
+        timetable = load_config(fp, MSTSInstall(args.msts), args.yaml.stem)
+    with open(args.yaml.parent/f'{args.yaml.stem}.timetable_or', 'wt') as fp:
+        timetable.write_csv(fp)
+
+
+def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
     yd = yaml.safe_load(fp)
     route = next(r for r in install.routes if r.id.lower() == yd['route'].lower())
-    tt = Timetable(route, yd['date'], yd['name'])
+    tt = Timetable(route, yd['date'], name)
     for block in yd['gtfs']:
         if block.get('file', ''):
             feed_path = block['file']
@@ -234,4 +250,8 @@ def _add_to_time(t: dt.time, td: dt.timedelta) -> dt.time:
     # https://stackoverflow.com/a/656394
     res = dt.datetime.combine(dt.date(year=2000, month=1, day=1), t)
     return (res + td).time()
+
+
+if __name__ == '__main__':
+    main()
 
