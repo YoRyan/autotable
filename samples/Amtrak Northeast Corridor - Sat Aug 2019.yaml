@@ -3,8 +3,6 @@ date: 2019-08-10
 gtfs:
   - url: https://transitland-gtfs.s3.amazonaws.com/datastore-uploads/feed_version/d2483076c78b6d8b12cf67a1fae7c4f5fa5aaad4.zip
     groups:
-      - note: $dec 2
-
         ##
         ## Towards Washington
         ##
@@ -14,24 +12,28 @@ gtfs:
             trip_short_name: '^(2203|2249|2251|2253)$'
         path: philwash
         consist: acela
+        note: $dec 2
 
         # Northeast Regional
       - selection:
             trip_short_name: '^(65|131|153|155|195|147|99|161|87|163|159|135|165|167)$'
         path: philwash
         consist: AcelaHHP-8stndrd
+        note: $dec 2
 
         # Vermonter
       - selection:
             trip_short_name: '^57$'
         path: philwash
         consist: AcelaHHP-8stndrd
+        note: $dec 2
 
         # Palmetto
       - selection:
             trip_short_name: '^89$'
         path: philwash
         consist: AcelaHHP-8stndrd
+        note: $dec 2
 
         ##
         ## Towards Philadelphia
@@ -42,21 +44,25 @@ gtfs:
             trip_short_name: '^(2248|2208|2254|2220)$'
         path: Blzzrd (Traffic01)
         consist: acela
+        note: $dec 2
 
         # Northeast Regional
       - selection:
             trip_short_name: '^(150|160|162|152|164|88|140|156|168|146|192|158|124|66)$'
         path: Blzzrd (Traffic01)
         consist: AcelaHHP-8stndrd
+        note: $dec 2
 
         # Vermonter
       - selection:
             trip_short_name: '^54$'
         path: Blzzrd (Traffic01)
         consist: AcelaHHP-8stndrd
+        note: $dec 2
 
         # Palmetto
       - selection:
             trip_short_name: '^90$'
         path: Blzzrd (Traffic01)
         consist: AcelaHHP-8stndrd
+        note: $dec 2
