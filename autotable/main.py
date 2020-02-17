@@ -122,15 +122,12 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         else:
             raise RuntimeError("GTFS block missing a 'file' or 'url'")
 
-        # Validate the path and consist fields, which are mandatory.
+        # Validate the path and consist fields.
         for group in block['groups']:
-            if 'path' not in group:
-                raise RuntimeError("trips block missing a 'path'")
-            elif group['path'].lower() not in route_paths:
+            if 'path' in group and group['path'].lower() not in route_paths:
                 raise RuntimeError(f"unknown {route.id} path '{group['path']}'")
-            elif 'consist' not in group:
-                raise RuntimeError("trips block missing a 'consist'")
-            elif group['consist'].lower() not in all_consists:
+            # TODO support the full syntax for timetable consists?
+            elif 'consist' in group and group['consist'].lower() not in all_consists:
                 raise RuntimeError(f"unknown consist '{group['consist']}'")
 
         # Select all filtered trips.
@@ -164,11 +161,15 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             start = -120
             for group in (group for i, group in enumerate(block['groups'])
                           if trip['trip_id'] in group_trips[i]):
-                path = group['path']
-                consist = group['consist']
+                path = group.get('path', '')
+                consist = group.get('consist', '')
                 start = group.get('start', start)
                 note = group.get('note', note)
                 dispose = group.get('dispose', dispose)
+            if not path:
+                raise RuntimeError(f"trip {trip['trip_id']} is missing a path")
+            elif not consist:
+                raise RuntimeError(f"trip {trip['trip_id']} is missing a consist")
             tt.trips[(feed_path, trip['trip_id'])] = Trip(
                 name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
                 path=path,
