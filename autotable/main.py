@@ -146,7 +146,7 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         all_stops = chain(*((stop_id for stop_id, _, _ in stops)
                             for stops in trips_sat.values()))
         station_map = _map_stations(route, feed, unique_everseen(all_stops),
-                                    init_map=yd.get('station_map', {}))
+                                    init_map=block.get('station_map', {}))
 
         # Add all Trips to Timetable.
         for _, trip in feed_trips[feed_trips['trip_id']
@@ -245,7 +245,12 @@ def _map_stations(
 
     def map_station(stop: pd.Series) -> str:
         if stop['stop_id'] in init_map:
-            return init_map[stop['stop_id']]
+            station = init_map[stop['stop_id']]
+            if route.stations()[station]:
+                return station
+            else:
+                raise RuntimeError(
+                    f"specified station not present in {route.id}: '{station}'")
         else:
             latlon = (stop['stop_lat'], stop['stop_lon'])
             matches = \
@@ -259,7 +264,7 @@ def _map_stations(
                 return matches[0]
             else:
                 raise RuntimeError(
-                    f"ambiguous station: '{name}' - candidates: {matches}")
+                    f"ambiguous station: '{stop['stop_id']}'; candidates: {matches}")
     feed_stops = feed.get_stops()
     return {stop['stop_id']: map_station(stop) for _, stop
             in feed_stops[feed_stops['stop_id'].isin(stop_ids)].iterrows()}
