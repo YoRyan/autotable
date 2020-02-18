@@ -160,11 +160,11 @@ Stop = namedtuple('Stop', ['station', 'arrival', 'departure', 'commands'])
 
 def main():
     parser = ArgumentParser(
-        description='Generate Open Rails timetables from GTFS data.')
+        description='Build Open Rails timetables with real-world GTFS data.')
     parser.add_argument('msts', type=Path,
                         help='path to MSTS installation or mini-route')
     parser.add_argument('yaml', type=Path,
-                        help='path to YAML timetable definition file')
+                        help='path to timetable recipe file')
     args = parser.parse_args()
 
     with open(args.yaml, 'rt') as fp:
