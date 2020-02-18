@@ -4,6 +4,7 @@ import datetime as dt
 import re
 from argparse import ArgumentParser
 from collections import Counter, namedtuple
+from dataclasses import dataclass
 from functools import lru_cache
 from itertools import chain
 from pathlib import Path
@@ -36,11 +37,8 @@ class Timetable:
         # https://open-rails.readthedocs.io/en/latest/timetable.html#data-definition
         writer = csv.writer(fp, delimiter=';', quoting=csv.QUOTE_NONE)
 
-        ordered_trips = list(self.trips.values())
-
-        def start_time(trip: Trip) -> dt.time:
-            return _add_to_time(
-                trip.stops[0].arrival, dt.timedelta(seconds=trip.start_offset))
+        ordered_stations = self._order_stations()
+        ordered_trips = self._order_trips(ordered_stations)
 
         def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
 
@@ -52,8 +50,7 @@ class Timetable:
         writer.writerow(chain(iter(('#consist', '', '')),
                               (trip.consist for trip in ordered_trips)))
         writer.writerow(chain(iter(('#start', '', '')),
-                              (strftime(start_time(trip))
-                               for trip in ordered_trips)))
+                              (strftime(trip.start_time) for trip in ordered_trips)))
         writer.writerow(chain(iter(('#note', '', '')),
                               (trip.note for trip in ordered_trips)))
 
@@ -74,7 +71,7 @@ class Timetable:
                     yield f'{strftime(stop.arrival)}-{strftime(stop.departure)}'
 
         writer.writerow([])
-        for s_name in self._order_stations():
+        for s_name in ordered_stations:
             writer.writerow(
                 chain(iter((s_name, self.station_commands.get(s_name, ''), '')),
                       station_stops(s_name)))
@@ -86,6 +83,7 @@ class Timetable:
     def _order_stations(self) -> list:
         stations = list(self.route.stations().keys())
 
+        # TODO account for fragmented groups of stations
         def cost(compare: list, trip: Trip) -> int:
             trip_set = set(stop.station for stop in trip.stops)
             trip_index = dict((stop.station, i) for i, stop in enumerate(trip.stops))
@@ -117,9 +115,45 @@ class Timetable:
 
         return greedy_search([stations[0]], set(stations[1:]))
 
+    def _order_trips(self, station_order: list) -> list:
+        order_index = dict((s_name, i) for i, s_name in enumerate(station_order))
 
-Trip = namedtuple('Trip', ['name', 'stops', 'path', 'consist',
-                           'start_offset', 'note', 'dispose_commands'])
+        # TODO try to detect branching
+        forwards = []
+        backwards = []
+        for trip in self.trips.values():
+            def stations() -> iter: return (stop.station for stop in trip.stops)
+            forward_pairs = mit.quantify(order_index[s1] < order_index[s2]
+                                         for s1, s2 in mit.pairwise(stations()))
+            backward_pairs = max(0, mit.ilen(stations()) - 1 - forward_pairs)
+            if forward_pairs >= backward_pairs:
+                forwards.append(trip)
+            else:
+                backwards.append(trip)
+
+        forwards.sort(key=lambda trip: trip.start_time)
+        backwards.sort(key=lambda trip: trip.start_time)
+        return forwards + backwards
+
+
+@dataclass
+class Trip:
+    name: str
+    stops: list
+    path: str
+    consist: str
+    start_offset: int
+    note: str
+    dispose_commands: str
+
+    def __post_init__(self):
+        first_stop = self.stops[0].arrival
+        # https://stackoverflow.com/a/656394
+        start_datetime = dt.datetime.combine(
+            dt.date(year=2000, month=1, day=1), first_stop)
+        self.start_time = \
+            (start_datetime + dt.timedelta(seconds=self.start_offset)).time()
+
 
 Stop = namedtuple('Stop', ['station', 'arrival', 'departure', 'commands'])
 
@@ -302,12 +336,6 @@ def _map_stations(
     feed_stops = feed.get_stops()
     return {stop['stop_id']: map_station(stop) for _, stop
             in feed_stops[feed_stops['stop_id'].isin(stop_ids)].iterrows()}
-
-
-def _add_to_time(t: dt.time, td: dt.timedelta) -> dt.time:
-    # https://stackoverflow.com/a/656394
-    res = dt.datetime.combine(dt.date(year=2000, month=1, day=1), t)
-    return (res + td).time()
 
 
 if __name__ == '__main__':
