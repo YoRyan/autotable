@@ -16,7 +16,7 @@ internal reader to parse Microsoft Train Simulator/Open Rails data files.
 ### Quick start
 
 ```
-$ pip3 install https://github.com/YoRyan/autotable
+$ pip3 install git+https://github.com/YoRyan/autotable
 ```
 
 ```
