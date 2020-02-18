@@ -10,11 +10,11 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import gtfs_kit as gk
+import more_itertools as mit
 import pandas as pd
 import pyproj as pp
 import requests
 import yaml
-from more_itertools import take, unique_everseen
 
 from autotable.mstsinstall import MSTSInstall, Route
 
@@ -37,7 +37,6 @@ class Timetable:
         writer = csv.writer(fp, delimiter=';', quoting=csv.QUOTE_NONE)
 
         ordered_trips = list(self.trips.values())
-        ordered_stations = list(self.route.stations().keys())
 
         def start_time(trip: Trip) -> dt.time:
             return _add_to_time(
@@ -75,7 +74,7 @@ class Timetable:
                     yield f'{strftime(stop.arrival)}-{strftime(stop.departure)}'
 
         writer.writerow([])
-        for s_name in ordered_stations:
+        for s_name in self._order_stations():
             writer.writerow(
                 chain(iter((s_name, self.station_commands.get(s_name, ''), '')),
                       station_stops(s_name)))
@@ -83,6 +82,40 @@ class Timetable:
 
         writer.writerow(chain(iter(('#dispose', '', '')),
                               (trip.dispose_commands for trip in ordered_trips)))
+
+    def _order_stations(self) -> list:
+        stations = list(self.route.stations().keys())
+
+        def cost(compare: list, trip: Trip) -> int:
+            trip_set = set(stop.station for stop in trip.stops)
+            trip_index = dict((stop.station, i) for i, stop in enumerate(trip.stops))
+
+            def common_stations() -> iter:
+                return filter(lambda s_name: s_name in trip_set, compare)
+
+            forwards = 10*mit.quantify(
+                trip_index[s1] + 1 != trip_index[s2]
+                for s1, s2 in mit.pairwise(common_stations()))
+            backwards = 1 + 10*mit.quantify(
+                trip_index[s1] != trip_index[s2] + 1
+                for s1, s2 in mit.pairwise(common_stations()))
+            return min(forwards, backwards)
+
+        def greedy_search(current_order: list, candidates: set) -> list:
+            if len(candidates) == 0:
+                return current_order
+
+            def total_cost(args: tuple) -> int:
+                order, _ = args
+                return sum(cost(order, trip) for trip in self.trips.values())
+
+            prepend = (([cand] + current_order, cand) for cand in candidates)
+            append = ((current_order + [cand], cand) for cand in candidates)
+            best, selected = min(chain(prepend, append), key=total_cost)
+            candidates.discard(selected)
+            return greedy_search(best, candidates)
+
+        return greedy_search([stations[0]], set(stations[1:]))
 
 
 Trip = namedtuple('Trip', ['name', 'stops', 'path', 'consist',
@@ -142,7 +175,7 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         # Collect and map all station names.
         all_stops = chain(*((stop_id for stop_id, _, _ in stops)
                             for stops in trips_sat.values()))
-        station_map = _map_stations(route, feed, unique_everseen(all_stops),
+        station_map = _map_stations(route, feed, mit.unique_everseen(all_stops),
                                     init_map=block.get('station_map', {}))
 
         # Add all Trips to Timetable.
@@ -254,10 +287,10 @@ def _map_stations(
                     f"specified station not present in {route.id}: '{station}'")
         else:
             latlon = (stop['stop_lat'], stop['stop_lon'])
-            matches = \
-                list(take(2, (s_name for s_name, s_list in route.stations().items()
-                              if (similarity(stop['stop_name'], s_name) >= 1.0
-                                  and dist_km(s_list[0].latlon, latlon) < 10))))
+            matches = list(mit.take(
+                2, (s_name for s_name, s_list in route.stations().items()
+                    if (similarity(stop['stop_name'], s_name) >= 1.0
+                        and dist_km(s_list[0].latlon, latlon) < 10))))
             n = len(matches)
             if n == 0:
                 return None
