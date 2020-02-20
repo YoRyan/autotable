@@ -175,9 +175,10 @@ def main():
 
 def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
     yd = yaml.safe_load(fp)
-    route = next(r for r in install.routes if r.id.lower() == yd['route'].lower())
-    route_paths = set(path.id.lower() for path in route.paths())
-    all_consists = set(consist.id.lower() for consist in install.consists())
+    route = next(r for r in install.routes
+                 if r.id.casefold() == yd['route'].casefold())
+    route_paths = set(path.id.casefold() for path in route.paths())
+    all_consists = set(consist.id.casefold() for consist in install.consists())
     tt = Timetable(route, yd['date'], name)
     for block in yd['gtfs']:
         if block.get('file', ''):
@@ -191,10 +192,12 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
 
         # Validate the path and consist fields.
         for group in block['groups']:
-            if 'path' in group and group['path'].lower() not in route_paths:
+            if ('path' in group
+                    and group['path'].casefold() not in route_paths):
                 raise RuntimeError(f"unknown {route.id} path '{group['path']}'")
             # TODO support the full syntax for timetable consists?
-            elif 'consist' in group and group['consist'].lower() not in all_consists:
+            elif ('consist' in group
+                    and group['consist'].casefold() not in all_consists):
                 raise RuntimeError(f"unknown consist '{group['consist']}'")
 
         # Select all filtered trips.
@@ -295,7 +298,7 @@ def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
 def _map_stations(
         route: Route, feed: gk.feed.Feed, stop_ids: iter, init_map: dict={}) -> dict:
     @lru_cache(maxsize=64)
-    def tokens(s: str) -> list: return re.split('[ \t:;,-]+', s.lower())
+    def tokens(s: str) -> list: return re.split('[ \t:;,-]+', s.casefold())
 
     word_frequency = Counter(
         chain(*(tokens(s_name) for s_name in route.stations().keys())))

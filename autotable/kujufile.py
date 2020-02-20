@@ -75,7 +75,8 @@ class Object(Node):
             return self.items[key]
         elif isinstance(key, str):
             sel = [item for item in self.items
-                   if isinstance(item, Object) and item.name.lower() == key.lower()]
+                   if (isinstance(item, Object)
+                       and item.name.casefold() == key.casefold())]
             if sel == []:
                 raise KeyError
             elif len(sel) == 1:
@@ -89,7 +90,7 @@ class Object(Node):
                 return [Object._evaluate(item) for item in sel]
 
     def __contains__(self, item):
-        return any(isinstance(i, Object) and i.name.lower() == item.lower()
+        return any(isinstance(i, Object) and i.name.casefold() == item.casefold()
                    for i in self.items)
 
     def values(self):
