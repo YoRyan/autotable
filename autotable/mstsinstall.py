@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import as_completed, ProcessPoolExecutor
 from collections import defaultdict, namedtuple
 from functools import lru_cache
 from pathlib import Path
@@ -14,14 +14,18 @@ ENCODING = 'utf-16'
 class MSTSInstall:
     def __init__(self, path: Path, encoding=ENCODING):
         self.path = path
-        self.routes = \
-            [Route(child) for child in _ichild(self.path, 'routes').iterdir()
-             if child.is_dir()]
+        route_dirs = (child for child in _ichild(self.path, 'routes').iterdir()
+                      if child.is_dir())
+        with ProcessPoolExecutor() as executor:
+            self.routes = executor.map(Route, route_dirs)
 
     @lru_cache(maxsize=1)
     def consists(self) -> list:
-        return [Consist(child) for child
-                in _ichild(_ichild(self.path, 'trains'), 'consists').iterdir()]
+        con_files = (child for child in _ichild(_ichild(self.path, 'trains'),
+                                                'consists').iterdir()
+                     if child.suffix.casefold() == '.con'.casefold())
+        with ProcessPoolExecutor() as executor:
+            return executor.map(Consist, con_files)
 
 
 class Route:
@@ -92,9 +96,14 @@ class Route:
 
     @lru_cache(maxsize=1)
     def paths(self) -> list:
-        return [Route.Path(child, encoding=self._encoding)
-                for child in _ichild(self.path, 'paths').iterdir()
-                if child.suffix.lower() == '.pat']
+        route_paths = (child for child in _ichild(self.path, 'paths').iterdir()
+                       if child.suffix.casefold() == '.pat'.casefold())
+        with ProcessPoolExecutor() as executor:
+            futures = []
+            for path in route_paths:
+                futures.append(
+                    executor.submit(Route.Path, path, encoding=self._encoding))
+            return [future.result() for future in as_completed(futures)]
 
 
 class Consist:
@@ -109,5 +118,5 @@ class Consist:
 
 
 def _ichild(path, name): return next(child for child in path.iterdir()
-                                     if child.name.lower() == name.lower())
+                                     if child.name.casefold() == name.casefold())
 
