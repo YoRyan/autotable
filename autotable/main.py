@@ -83,21 +83,24 @@ class Timetable:
     def _order_stations(self) -> list:
         stations = list(self.route.stations().keys())
 
-        # TODO account for fragmented groups of stations
         def cost(compare: list, trip: Trip) -> int:
             trip_set = set(stop.station for stop in trip.stops)
             trip_index = dict((stop.station, i) for i, stop in enumerate(trip.stops))
+            compare_index = dict((station, i) for i, station in enumerate(compare))
 
             def common_stations() -> iter:
                 return filter(lambda s_name: s_name in trip_set, compare)
 
-            forwards = 10*mit.quantify(
+            discontinuous = mit.quantify(
+                compare_index[s1] + 1 != compare_index[s2]
+                for s1, s2 in mit.pairwise(common_stations()))
+            forwards = 100*mit.quantify(
                 trip_index[s1] + 1 != trip_index[s2]
                 for s1, s2 in mit.pairwise(common_stations()))
-            backwards = 1 + 10*mit.quantify(
+            backwards = 1 + 100*mit.quantify(
                 trip_index[s1] != trip_index[s2] + 1
                 for s1, s2 in mit.pairwise(common_stations()))
-            return min(forwards, backwards)
+            return discontinuous + min(forwards, backwards)
 
         def greedy_search(current_order: list, candidates: set) -> list:
             if len(candidates) == 0:
