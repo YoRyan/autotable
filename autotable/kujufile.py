@@ -244,7 +244,7 @@ def _parse(s):
                     state = State.COMMENT_SLASH
             elif state == State.LITERAL:
                 if (ch.isalpha() or ch.isnumeric() or ch == '.' or ch == '_'
-                        or ch == '-' or ch == '@'):
+                        or ch == '-' or ch == '@' or ch == '+'):
                     lexeme += ch
                 elif ch == '(':
                     yield evaluate()
@@ -252,9 +252,6 @@ def _parse(s):
                 elif ch == ')':
                     yield evaluate()
                     yield RParenToken()
-                elif ch == '+':
-                    yield evaluate()
-                    yield PlusToken()
                 elif ch == '"':
                     yield evaluate()
                     state = State.QUOTE

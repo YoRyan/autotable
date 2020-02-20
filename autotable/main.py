@@ -273,7 +273,7 @@ def _select(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
                         'trip_short_name', 'direction_id', 'block_id',
                         'shape_id', 'wheelchair_accessible', 'bikes_allowed']:
             raise KeyError(f'not a valid GTFS trip attribute: {prop}')
-        df = df[df[prop].str.match(regex)]
+        df = df[df[prop].astype(str).str.match(regex)]
     return df
 
 

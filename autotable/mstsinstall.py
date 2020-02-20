@@ -15,7 +15,8 @@ class MSTSInstall:
     def __init__(self, path: Path, encoding=ENCODING):
         self.path = path
         self.routes = \
-            [Route(child) for child in _ichild(self.path, 'routes').iterdir()]
+            [Route(child) for child in _ichild(self.path, 'routes').iterdir()
+             if child.is_dir()]
 
     @lru_cache(maxsize=1)
     def consists(self) -> list:
