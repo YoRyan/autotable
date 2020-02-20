@@ -23,6 +23,25 @@ from autotable.mstsinstall import MSTSInstall, Route
 _GTFS_UNITS = 'm'
 
 
+@dataclass
+class Trip:
+    name: str
+    stops: list
+    path: str
+    consist: str
+    start_offset: int
+    note: str
+    dispose_commands: str
+
+    def __post_init__(self):
+        first_stop = self.stops[0].arrival
+        # https://stackoverflow.com/a/656394
+        start_datetime = dt.datetime.combine(
+            dt.date(year=2000, month=1, day=1), first_stop)
+        self.start_time = \
+            (start_datetime + dt.timedelta(seconds=self.start_offset)).time()
+
+
 class Timetable:
 
     def __init__(self, route: Route, date: dt.date, name: str):
@@ -37,8 +56,10 @@ class Timetable:
         # https://open-rails.readthedocs.io/en/latest/timetable.html#data-definition
         writer = csv.writer(fp, delimiter=';', quoting=csv.QUOTE_NONE)
 
-        ordered_stations = self._order_stations()
-        ordered_trips = self._order_trips(ordered_stations)
+        ordered_stations = Timetable._order_stations(
+            list(self.trips.values()), iter(self.route.stations().keys()))
+        ordered_trips = Timetable._order_trips(
+            list(self.trips.values()), ordered_stations)
 
         def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
 
@@ -80,51 +101,47 @@ class Timetable:
         writer.writerow(chain(iter(('#dispose', '', '')),
                               (trip.dispose_commands for trip in ordered_trips)))
 
-    def _order_stations(self) -> list:
-        stations = list(self.route.stations().keys())
+    def _order_stations(trips: list, stations: iter) -> list:
+        current_order = [next(stations)]
+        candidates = set(stations)
 
-        def cost(compare: list, trip: Trip) -> int:
-            trip_set = set(stop.station for stop in trip.stops)
-            trip_index = dict((stop.station, i) for i, stop in enumerate(trip.stops))
-            compare_index = dict((station, i) for i, station in enumerate(compare))
+        def total_cost(args: tuple):
+            order, _ = args
+            return sum(Timetable._station_order_cost(order, trip) for trip in trips)
 
-            def common_stations() -> iter:
-                return filter(lambda s_name: s_name in trip_set, compare)
-
-            discontinuous = mit.quantify(
-                compare_index[s1] + 1 != compare_index[s2]
-                for s1, s2 in mit.pairwise(common_stations()))
-            forwards = 100*mit.quantify(
-                trip_index[s1] + 1 != trip_index[s2]
-                for s1, s2 in mit.pairwise(common_stations()))
-            backwards = 1 + 100*mit.quantify(
-                trip_index[s1] != trip_index[s2] + 1
-                for s1, s2 in mit.pairwise(common_stations()))
-            return discontinuous + min(forwards, backwards)
-
-        def greedy_search(current_order: list, candidates: set) -> list:
-            if len(candidates) == 0:
-                return current_order
-
-            def total_cost(args: tuple) -> int:
-                order, _ = args
-                return sum(cost(order, trip) for trip in self.trips.values())
-
+        while len(candidates) > 0:
             prepend = (([cand] + current_order, cand) for cand in candidates)
             append = ((current_order + [cand], cand) for cand in candidates)
-            best, selected = min(chain(prepend, append), key=total_cost)
+            current_order, selected = min(chain(prepend, append), key=total_cost)
             candidates.discard(selected)
-            return greedy_search(best, candidates)
+        return current_order
 
-        return greedy_search([stations[0]], set(stations[1:]))
+    def _station_order_cost(compare: list, trip: Trip) -> int:
+        trip_set = set(stop.station for stop in trip.stops)
+        trip_index = dict((stop.station, i) for i, stop in enumerate(trip.stops))
+        compare_index = dict((station, i) for i, station in enumerate(compare))
 
-    def _order_trips(self, station_order: list) -> list:
+        def common_stations() -> iter:
+            return filter(lambda s_name: s_name in trip_set, compare)
+
+        discontinuous = mit.quantify(
+            compare_index[s1] + 1 != compare_index[s2]
+            for s1, s2 in mit.pairwise(common_stations()))
+        forwards = 100*mit.quantify(
+            trip_index[s1] + 1 != trip_index[s2]
+            for s1, s2 in mit.pairwise(common_stations()))
+        backwards = 1 + 100*mit.quantify(
+            trip_index[s1] != trip_index[s2] + 1
+            for s1, s2 in mit.pairwise(common_stations()))
+        return discontinuous + min(forwards, backwards)
+
+    def _order_trips(trips: list, station_order: list) -> list:
         order_index = dict((s_name, i) for i, s_name in enumerate(station_order))
 
         # TODO try to detect branching
         forwards = []
         backwards = []
-        for trip in self.trips.values():
+        for trip in trips:
             def stations() -> iter: return (stop.station for stop in trip.stops)
             forward_pairs = mit.quantify(order_index[s1] < order_index[s2]
                                          for s1, s2 in mit.pairwise(stations()))
@@ -137,25 +154,6 @@ class Timetable:
         forwards.sort(key=lambda trip: trip.start_time)
         backwards.sort(key=lambda trip: trip.start_time)
         return forwards + backwards
-
-
-@dataclass
-class Trip:
-    name: str
-    stops: list
-    path: str
-    consist: str
-    start_offset: int
-    note: str
-    dispose_commands: str
-
-    def __post_init__(self):
-        first_stop = self.stops[0].arrival
-        # https://stackoverflow.com/a/656394
-        start_datetime = dt.datetime.combine(
-            dt.date(year=2000, month=1, day=1), first_stop)
-        self.start_time = \
-            (start_datetime + dt.timedelta(seconds=self.start_offset)).time()
 
 
 Stop = namedtuple('Stop', ['station', 'arrival', 'departure', 'commands'])
