@@ -7,7 +7,7 @@ from collections import Counter, namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
-from itertools import chain
+from itertools import chain, takewhile
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -125,6 +125,11 @@ class Timetable:
 
             trip_set = set(trip_order)
             common_stations = [s for s in compare_order if s in trip_set]
+            if len(common_stations) == 0:
+                length = 0
+            else:
+                length = mit.ilen(takewhile(lambda s: s != common_stations[-1],
+                                            iter(compare_order)))
 
             forward = (
                 (mit.quantify(trip_index[s1] < trip_index[s2]
@@ -132,16 +137,18 @@ class Timetable:
                      - mit.quantify(trip_index[s1] > trip_index[s2]
                                     for s1, s2 in mit.pairwise(common_stations))),
                 0,
-                -mit.quantify(trip_index[s1] + 1 != trip_index[s2]
-                              for s1, s2 in mit.pairwise(common_stations)))
+                (-mit.quantify(trip_index[s1] + 1 != trip_index[s2]
+                               for s1, s2 in mit.pairwise(common_stations))
+                     - length))
             backward = (
                 (mit.quantify(trip_index[s1] > trip_index[s2]
                               for s1, s2 in mit.pairwise(common_stations))
                      - mit.quantify(trip_index[s1] < trip_index[s2]
                                     for s1, s2 in mit.pairwise(common_stations))),
                 -1,
-                -mit.quantify(trip_index[s1] != trip_index[s2] + 1
-                              for s1, s2 in mit.pairwise(common_stations)))
+                (-mit.quantify(trip_index[s1] != trip_index[s2] + 1
+                               for s1, s2 in mit.pairwise(common_stations))
+                     - length))
             return max(forward, backward)
 
         trip_costs = \
