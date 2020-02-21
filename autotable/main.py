@@ -58,7 +58,7 @@ class Timetable:
         writer = csv.writer(fp, delimiter=';', quoting=csv.QUOTE_NONE)
 
         ordered_stations = Timetable._order_stations(
-            list(self.trips.values()), iter(self.route.stations().keys()))
+            self.trips.values(), iter(self.route.stations().keys()))
         ordered_trips = Timetable._order_trips(
             list(self.trips.values()), ordered_stations)
 
@@ -103,21 +103,19 @@ class Timetable:
                               (trip.dispose_commands for trip in ordered_trips)))
 
     def _order_stations(trips: list, stations: iter) -> list:
-        trip_indexes = \
-            [dict((stop.station, i) for i, stop in enumerate(trip.stops))
-             for trip in trips]
+        sm_trips = \
+            tuple(tuple(stop.station for stop in trip.stops) for trip in trips)
         with ProcessPoolExecutor() as executor:
-            current_order = [next(stations)]
+            current_order = (next(stations),)
             candidates = set(stations)
             while len(candidates) > 0:
-                prepend = (([cand] + current_order, cand) for cand in candidates)
-                append = ((current_order + [cand], cand) for cand in candidates)
+                prepend = (((cand,) + current_order, cand) for cand in candidates)
+                append = ((current_order + (cand,), cand) for cand in candidates)
 
                 future_to_key = {}
                 for order, candidate in chain(prepend, append):
-                    order_index = dict(enumerate(order))
                     future = executor.submit(
-                        Timetable._station_order_cost, order_index, trip_indexes)
+                        Timetable._station_order_cost, order, sm_trips)
                     future_to_key[future] = (order, candidate)
 
                 best_future = min(
@@ -126,12 +124,16 @@ class Timetable:
                 candidates.discard(selected)
             return current_order
 
-    def _station_order_cost(order_index: dict, trip_indexes: list) -> int:
-        def trip_cost(order_index: dict, trip_index: dict) -> int:
-            common_stations = [s_name for s_name in order_index.keys()
-                               if s_name in trip_index.keys()]
+    def _station_order_cost(compare_order: tuple, trip_orders: tuple) -> int:
+        def trip_cost(compare_order: tuple, trip_order: tuple) -> int:
+            compare_index = {station: i for i, station in enumerate(compare_order)}
+            trip_index = {station: i for i, station in enumerate(trip_order)}
+
+            trip_set = set(trip_order)
+            common_stations = [s for s in compare_order if s in trip_set]
+
             discontinuous = mit.quantify(
-                order_index[s1] + 1 != order_index[s2]
+                compare_index[s1] + 1 != compare_index[s2]
                 for s1, s2 in mit.pairwise(common_stations))
             forwards = 100*mit.quantify(
                 trip_index[s1] + 1 != trip_index[s2]
@@ -140,7 +142,9 @@ class Timetable:
                 trip_index[s1] != trip_index[s2] + 1
                 for s1, s2 in mit.pairwise(common_stations))
             return discontinuous + min(forwards, backwards)
-        return sum(trip_cost(order_index, trip_index) for trip_index in trip_indexes)
+
+        return sum(trip_cost(compare_order, trip_order)
+                   for trip_order in trip_orders)
 
     def _order_trips(trips: list, station_order: list) -> list:
         order_index = dict((s_name, i) for i, s_name in enumerate(station_order))
