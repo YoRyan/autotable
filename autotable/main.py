@@ -319,9 +319,13 @@ def _map_stations(
     word_frequency = Counter(
         chain(*(tokens(s_name) for s_name in route.stations().keys())))
     def similarity(a: str, b: str) -> float:
-        intersect = set(tokens(a)) & set(tokens(b))
-        return sum(1/word_frequency[token] if token in word_frequency else 0.0
-                   for token in intersect)
+        ta = set(tokens(a))
+        tb = set(tokens(b))
+        intersect = set(ta & tb)
+        difference = set.symmetric_difference(ta, tb)
+        return -0.1*len(difference) \
+            + sum(1/word_frequency[token] if token in word_frequency else 0.0
+                  for token in intersect)
 
     geod = pp.Geod(ellps='WGS84')
     def dist_km(a: tuple, b: tuple) -> float:
