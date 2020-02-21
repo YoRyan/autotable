@@ -340,18 +340,15 @@ def _map_stations(
                     f"specified station not present in {route.id}: '{station}'")
         else:
             latlon = (stop['stop_lat'], stop['stop_lon'])
-            matches = list(mit.take(
-                2, (s_name for s_name, s_list in route.stations().items()
-                    if (similarity(stop['stop_name'], s_name) >= 1.0
-                        and dist_km(s_list[0].latlon, latlon) < 10))))
-            n = len(matches)
-            if n == 0:
+            matches = {s_name: similarity(stop['stop_name'], s_name)
+                       for s_name, s_list in route.stations().items()
+                       if any(dist_km(platform.latlon, latlon) < 10.0
+                              for platform in s_list)}
+            if len(matches) == 0:
                 return None
-            elif n == 1:
-                return matches[0]
             else:
-                raise RuntimeError(
-                    f"ambiguous station: '{stop['stop_id']}'; candidates: {matches}")
+                return max(matches, key=matches.get)
+
     feed_stops = feed.get_stops()
     return {stop['stop_id']: map_station(stop) for _, stop
             in feed_stops[feed_stops['stop_id'].isin(stop_ids)].iterrows()}
