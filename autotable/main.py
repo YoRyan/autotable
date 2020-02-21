@@ -4,6 +4,7 @@ import datetime as dt
 import re
 from argparse import ArgumentParser
 from collections import Counter, namedtuple
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import chain
@@ -102,38 +103,44 @@ class Timetable:
                               (trip.dispose_commands for trip in ordered_trips)))
 
     def _order_stations(trips: list, stations: iter) -> list:
-        current_order = [next(stations)]
-        candidates = set(stations)
+        trip_indexes = \
+            [dict((stop.station, i) for i, stop in enumerate(trip.stops))
+             for trip in trips]
+        with ProcessPoolExecutor() as executor:
+            current_order = [next(stations)]
+            candidates = set(stations)
+            while len(candidates) > 0:
+                prepend = (([cand] + current_order, cand) for cand in candidates)
+                append = ((current_order + [cand], cand) for cand in candidates)
 
-        def total_cost(args: tuple):
-            order, _ = args
-            return sum(Timetable._station_order_cost(order, trip) for trip in trips)
+                future_to_key = {}
+                for order, candidate in chain(prepend, append):
+                    order_index = dict(enumerate(order))
+                    future = executor.submit(
+                        Timetable._station_order_cost, order_index, trip_indexes)
+                    future_to_key[future] = (order, candidate)
 
-        while len(candidates) > 0:
-            prepend = (([cand] + current_order, cand) for cand in candidates)
-            append = ((current_order + [cand], cand) for cand in candidates)
-            current_order, selected = min(chain(prepend, append), key=total_cost)
-            candidates.discard(selected)
-        return current_order
+                best_future = min(
+                    as_completed(future_to_key), key=lambda future: future.result())
+                current_order, selected = future_to_key[best_future]
+                candidates.discard(selected)
+            return current_order
 
-    def _station_order_cost(compare: list, trip: Trip) -> int:
-        trip_set = set(stop.station for stop in trip.stops)
-        trip_index = dict((stop.station, i) for i, stop in enumerate(trip.stops))
-        compare_index = dict((station, i) for i, station in enumerate(compare))
-
-        def common_stations() -> iter:
-            return filter(lambda s_name: s_name in trip_set, compare)
-
-        discontinuous = mit.quantify(
-            compare_index[s1] + 1 != compare_index[s2]
-            for s1, s2 in mit.pairwise(common_stations()))
-        forwards = 100*mit.quantify(
-            trip_index[s1] + 1 != trip_index[s2]
-            for s1, s2 in mit.pairwise(common_stations()))
-        backwards = 1 + 100*mit.quantify(
-            trip_index[s1] != trip_index[s2] + 1
-            for s1, s2 in mit.pairwise(common_stations()))
-        return discontinuous + min(forwards, backwards)
+    def _station_order_cost(order_index: dict, trip_indexes: list) -> int:
+        def trip_cost(order_index: dict, trip_index: dict) -> int:
+            common_stations = [s_name for s_name in order_index.keys()
+                               if s_name in trip_index.keys()]
+            discontinuous = mit.quantify(
+                order_index[s1] + 1 != order_index[s2]
+                for s1, s2 in mit.pairwise(common_stations))
+            forwards = 100*mit.quantify(
+                trip_index[s1] + 1 != trip_index[s2]
+                for s1, s2 in mit.pairwise(common_stations))
+            backwards = 1 + 100*mit.quantify(
+                trip_index[s1] != trip_index[s2] + 1
+                for s1, s2 in mit.pairwise(common_stations))
+            return discontinuous + min(forwards, backwards)
+        return sum(trip_cost(order_index, trip_index) for trip_index in trip_indexes)
 
     def _order_trips(trips: list, station_order: list) -> list:
         order_index = dict((s_name, i) for i, s_name in enumerate(station_order))
