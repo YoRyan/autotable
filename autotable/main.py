@@ -118,7 +118,7 @@ class Timetable:
                         Timetable._station_order_cost, order, sm_trips)
                     future_to_key[future] = (order, candidate)
 
-                best_future = min(
+                best_future = max(
                     as_completed(future_to_key), key=lambda future: future.result())
                 current_order, selected = future_to_key[best_future]
                 candidates.discard(selected)
@@ -133,18 +133,22 @@ class Timetable:
             common_stations = [s for s in compare_order if s in trip_set]
 
             discontinuous = mit.quantify(
-                compare_index[s1] + 1 != compare_index[s2]
+                abs(compare_index[s1] - compare_index[s2]) > 1
                 for s1, s2 in mit.pairwise(common_stations))
-            forwards = 100*mit.quantify(
-                trip_index[s1] + 1 != trip_index[s2]
+            forwards = mit.quantify(
+                trip_index[s1] + 1 == trip_index[s2]
                 for s1, s2 in mit.pairwise(common_stations))
-            backwards = 1 + 100*mit.quantify(
-                trip_index[s1] != trip_index[s2] + 1
+            backwards = mit.quantify(
+                trip_index[s1] == trip_index[s2] + 1
                 for s1, s2 in mit.pairwise(common_stations))
-            return discontinuous + min(forwards, backwards)
+            direction = int(forwards > backwards)
+            return (max(forwards, backwards), direction, -discontinuous)
 
-        return sum(trip_cost(compare_order, trip_order)
-                   for trip_order in trip_orders)
+        cost = (0,)*3
+        for t in (trip_cost(compare_order, trip_order)
+                  for trip_order in trip_orders):
+            cost = tuple(x + y for x, y in zip(cost, t))
+        return cost
 
     def _order_trips(trips: list, station_order: list) -> list:
         order_index = dict((s_name, i) for i, s_name in enumerate(station_order))
