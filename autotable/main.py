@@ -106,23 +106,17 @@ class Timetable:
         sm_trips = \
             tuple(tuple(stop.station for stop in trip.stops) for trip in trips)
         with ProcessPoolExecutor() as executor:
-            current_order = (next(stations),)
-            candidates = set(stations)
-            while len(candidates) > 0:
-                prepend = (((cand,) + current_order, cand) for cand in candidates)
-                append = ((current_order + (cand,), cand) for cand in candidates)
-
-                future_to_key = {}
-                for order, candidate in chain(prepend, append):
-                    future = executor.submit(
-                        Timetable._station_order_cost, order, sm_trips)
-                    future_to_key[future] = (order, candidate)
-
+            order = (next(stations),)
+            for station in stations:
+                candidates = (order[0:i] + (station,) + order[i:]
+                              for i in range(len(order) + 1))
+                future_to_key = \
+                    {executor.submit(Timetable._station_order_cost, cand, sm_trips):
+                     cand for cand in candidates}
                 best_future = max(
                     as_completed(future_to_key), key=lambda future: future.result())
-                current_order, selected = future_to_key[best_future]
-                candidates.discard(selected)
-            return current_order
+                order = future_to_key[best_future]
+            return order
 
     def _station_order_cost(compare_order: tuple, trip_orders: tuple) -> int:
         def trip_cost(compare_order: tuple, trip_order: tuple) -> int:
@@ -132,21 +126,28 @@ class Timetable:
             trip_set = set(trip_order)
             common_stations = [s for s in compare_order if s in trip_set]
 
-            discontinuous = mit.quantify(
-                abs(compare_index[s1] - compare_index[s2]) > 1
-                for s1, s2 in mit.pairwise(common_stations))
-            forwards = mit.quantify(
-                trip_index[s1] + 1 == trip_index[s2]
-                for s1, s2 in mit.pairwise(common_stations))
-            backwards = mit.quantify(
-                trip_index[s1] == trip_index[s2] + 1
-                for s1, s2 in mit.pairwise(common_stations))
-            direction = int(forwards > backwards)
-            return (max(forwards, backwards), direction, -discontinuous)
+            forward = (
+                (mit.quantify(trip_index[s1] < trip_index[s2]
+                              for s1, s2 in mit.pairwise(common_stations))
+                     - mit.quantify(trip_index[s1] > trip_index[s2]
+                                    for s1, s2 in mit.pairwise(common_stations))),
+                0,
+                -mit.quantify(trip_index[s1] + 1 != trip_index[s2]
+                              for s1, s2 in mit.pairwise(common_stations)))
+            backward = (
+                (mit.quantify(trip_index[s1] > trip_index[s2]
+                              for s1, s2 in mit.pairwise(common_stations))
+                     - mit.quantify(trip_index[s1] < trip_index[s2]
+                                    for s1, s2 in mit.pairwise(common_stations))),
+                -1,
+                -mit.quantify(trip_index[s1] != trip_index[s2] + 1
+                              for s1, s2 in mit.pairwise(common_stations)))
+            return max(forward, backward)
 
-        cost = (0,)*3
-        for t in (trip_cost(compare_order, trip_order)
-                  for trip_order in trip_orders):
+        trip_costs = \
+            (trip_cost(compare_order, trip_order) for trip_order in trip_orders)
+        cost = next(trip_costs)
+        for t in trip_costs:
             cost = tuple(x + y for x, y in zip(cost, t))
         return cost
 
