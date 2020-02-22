@@ -236,25 +236,34 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         # Collect and map all station names.
         all_stops = chain(*((stop_id for stop_id, _, _ in stops)
                             for stops in trips_sat.values()))
-        station_map = _map_stations(route, feed, mit.unique_everseen(all_stops),
-                                    init_map=block.get('station_map', {}))
+        auto_map = _map_stations(route, feed, mit.unique_everseen(all_stops))
+        gtfs_map = block.get('station_map', {})
 
         # Add all Trips to Timetable.
         for _, trip in feed_trips[feed_trips['trip_id']
                 .isin(chain(*group_trips.values()))].iterrows():
-            stops = [Stop(station=station_map[stop_id],
+            groups = [group for i, group in enumerate(block['groups'])
+                      if trip['trip_id'] in group_trips[i]]
+            trip_map = {}
+            for group in groups:
+                trip_map.update(group.get('station_map', {}))
+
+            def map_station(stop_id: str) -> str:
+                return trip_map.get(stop_id,
+                    gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
+
+            stops = [Stop(station=map_station(stop_id),
                           arrival=arrival,
                           departure=departure,
                           commands='')
                      for stop_id, arrival, departure in trips_sat[trip['trip_id']]
-                     if station_map.get(stop_id, None) is not None]
+                     if map_station(stop_id) is not None]
             if len(stops) < 2:
                 continue
 
             path = consist = note = dispose = ''
             start = -120
-            for group in (group for i, group in enumerate(block['groups'])
-                          if trip['trip_id'] in group_trips[i]):
+            for group in groups:
                 path = group.get('path', '')
                 consist = group.get('consist', '')
                 start = group.get('start', start)
@@ -343,23 +352,15 @@ def _map_stations(
         return dist/1000.0
 
     def map_station(stop: pd.Series) -> str:
-        if stop['stop_id'] in init_map:
-            station = init_map[stop['stop_id']]
-            if route.stations()[station]:
-                return station
-            else:
-                raise RuntimeError(
-                    f"specified station not present in {route.id}: '{station}'")
+        latlon = (stop['stop_lat'], stop['stop_lon'])
+        matches = \
+            {s_name: similarity(stop['stop_name'], s_name)
+             for s_name, s_list in route.stations().items()
+             if any(dist_km(platform.latlon, latlon) < 10.0 for platform in s_list)}
+        if len(matches) == 0:
+            return None
         else:
-            latlon = (stop['stop_lat'], stop['stop_lon'])
-            matches = {s_name: similarity(stop['stop_name'], s_name)
-                       for s_name, s_list in route.stations().items()
-                       if any(dist_km(platform.latlon, latlon) < 10.0
-                              for platform in s_list)}
-            if len(matches) == 0:
-                return None
-            else:
-                return max(matches, key=matches.get)
+            return max(matches, key=matches.get)
 
     feed_stops = feed.get_stops()
     return {stop['stop_id']: map_station(stop) for _, stop
