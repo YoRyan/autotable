@@ -377,7 +377,7 @@ def _select(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
 def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
     def parse_time(s):
-        match = re.match(r'^(\d?\d):([012345]\d):([012345]\d)$', s)
+        match = re.match(r'^(\d?\d):([012345]\d):([012345]\d)$', s.strip())
         if not match:
             raise ValueError(f'invalid GTFS time: {s}')
         return dt.time(hour=int(match.group(1)) % 24,
