@@ -354,7 +354,6 @@ def _select(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
 
 def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
-    trip = feed.stop_times[feed.stop_times['trip_id'] == trip_id]
     def parse_time(s):
         match = re.match(r'^(\d?\d):([012345]\d):([012345]\d)$', s)
         if not match:
@@ -362,9 +361,17 @@ def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
         return dt.time(hour=int(match.group(1)) % 24,
                        minute=int(match.group(2)),
                        second=int(match.group(3)))
-    return ((row['stop_id'],
-             parse_time(row['arrival_time']), parse_time(row['departure_time']))
-            for _, row in trip.sort_values(by='stop_sequence').iterrows())
+
+    trip = (feed.stop_times[feed.stop_times['trip_id'] == trip_id]
+        .sort_values(by='stop_sequence'))
+    times = trip[['arrival_time', 'departure_time']].astype(str)
+    stop = trip['stop_id'].astype(str)
+
+    def parse_stop(idx: int) -> tuple:
+        return (stop.iat[idx],
+                parse_time(times.iloc[idx]['arrival_time']),
+                parse_time(times.iloc[idx]['departure_time']))
+    return (parse_stop(i) for i in range(len(trip)))
 
 
 def _map_stations(
@@ -401,8 +408,9 @@ def _map_stations(
         else:
             return max(matches, key=matches.get)
 
-    return {stop['stop_id']: map_station(stop) for _, stop
-            in feed.stops[feed.stops['stop_id'].isin(stop_ids)].iterrows()}
+    return \
+        {stop['stop_id']: map_station(stop) for _, stop
+         in feed.stops[feed.stops['stop_id'].astype(str).isin(stop_ids)].iterrows()}
 
 
 if __name__ == '__main__':
