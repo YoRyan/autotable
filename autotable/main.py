@@ -17,6 +17,7 @@ import pandas as pd
 import pyproj as pp
 import requests
 import yaml
+from gtfs_kit.helpers import weekday_to_str
 
 from autotable.mstsinstall import MSTSInstall, Route
 
@@ -300,7 +301,46 @@ def _download_gtfs(url: str) -> gk.feed.Feed:
 
 
 def _get_trips(feed: gk.feed.Feed, date: dt.date) -> pd.DataFrame:
-    return feed.get_trips(date=date.strftime('%Y%m%d'))
+    def parse_date(s: str) -> dt.date:
+        return dt.datetime.strptime(s.strip(), '%Y%m%d').date()
+
+    calendar_dates = \
+        (feed.calendar_dates.copy() if feed.calendar_dates is not None
+         else pd.DataFrame(columns=['service_id', 'date', 'exception_type']))
+    calendar_dates['_date_parsed'] = \
+        calendar_dates['date'].astype(str).apply(parse_date)
+    calendar_dates = calendar_dates.set_index(['service_id', '_date_parsed'])
+    exceptions = calendar_dates['exception_type'].astype(int)
+
+    calendar = \
+        (feed.calendar.set_index('service_id') if feed.calendar is not None
+         else pd.DataFrame(columns=['service_id', 'start_date', 'end_date']))
+    # On some feeds, pandas interprets dates as int64's. Currently, GTFS Kit
+    # doesn't anticipate this condition, so we will.
+    in_service = calendar[['start_date', 'end_date']].astype(str)
+    weekdays = calendar.drop(['start_date', 'end_date'], axis=1).astype(bool)
+
+    # TODO: Also select multi-day trips that began on previous dates.
+    def is_active(trip: pd.Series) -> bool:
+        service_id = trip['service_id']
+        if (service_id, date) in calendar_dates.index:
+            exception = exceptions.at[(service_id, date), 'exception_type']
+            if exception == 1:
+                return True
+            elif exception == 2:
+                return False
+            else:
+                assert False
+        elif service_id in calendar.index:
+            in_range = parse_date(in_service.at[service_id, 'start_date']) \
+                <= date \
+                <= parse_date(in_service.at[service_id, 'end_date'])
+            day_match = weekdays.at[service_id, weekday_to_str(date.weekday())]
+            return in_range and day_match
+        else:
+            return False
+
+    return feed.trips[feed.trips.apply(is_active, axis=1)]
 
 
 def _select(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
@@ -314,8 +354,7 @@ def _select(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
 
 def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
-    stop_times = feed.get_stop_times()
-    trip = stop_times[stop_times['trip_id'] == trip_id]
+    trip = feed.stop_times[feed.stop_times['trip_id'] == trip_id]
     def parse_time(s):
         match = re.match(r'^(\d?\d):([012345]\d):([012345]\d)$', s)
         if not match:
@@ -362,9 +401,8 @@ def _map_stations(
         else:
             return max(matches, key=matches.get)
 
-    feed_stops = feed.get_stops()
     return {stop['stop_id']: map_station(stop) for _, stop
-            in feed_stops[feed_stops['stop_id'].isin(stop_ids)].iterrows()}
+            in feed.stops[feed.stops['stop_id'].isin(stop_ids)].iterrows()}
 
 
 if __name__ == '__main__':
