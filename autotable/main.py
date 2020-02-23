@@ -106,7 +106,8 @@ class Timetable:
                 else:
                     time = f'{strftime(stop.arrival)}-{strftime(stop.departure)}'
 
-                commands = trip.station_commands.get(s_name, '')
+                commands = trip.station_commands.get(s_name,
+                    trip.station_commands.get('', ''))
                 if commands:
                     yield f'{time} {commands}'
                 else:
@@ -122,9 +123,10 @@ class Timetable:
 
         writer.writerow([])
         for s_name in ordered_stations:
+            commands = self.station_commands.get(
+                s_name, self.station_commands.get('', ''))
             writer.writerow(
-                chain(iter((s_name, self.station_commands.get(s_name, ''), '')),
-                      station_stops(s_name)))
+                chain(iter((s_name, commands, '')), station_stops(s_name)))
             writer.writerow(
                 chain(iter(('#comment', '', '',)), station_mappings(s_name)))
         writer.writerow([])
