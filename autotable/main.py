@@ -397,18 +397,21 @@ def _map_stations(
         _, _, dist = geod.inv(lon_a, lat_a, lon_b, lat_b)
         return dist/1000.0
 
+    stations = set(route.stations().keys())
     def map_station(stop: pd.Series) -> str:
         latlon = (stop['stop_lat'], stop['stop_lon'])
         matches = \
-            {s_name: similarity(stop['stop_name'], s_name)
-             for s_name, s_list in route.stations().items()
-             if any(dist_km(platform.latlon, latlon) < 10.0 for platform in s_list)}
+            {s_name: similarity(stop['stop_name'], s_name) for s_name in stations
+             if any(dist_km(platform.latlon, latlon) < 10.0
+                    for platform in route.stations()[s_name])}
         matches = {s_name: similarity for s_name, similarity in matches.items()
                    if similarity >= 0}
         if len(matches) == 0:
             return None
         else:
-            return max(matches, key=matches.get)
+            best_match = max(matches, key=matches.get)
+            stations.remove(best_match)
+            return best_match
 
     return \
         {stop['stop_id']: map_station(stop) for _, stop
