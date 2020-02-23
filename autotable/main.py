@@ -33,6 +33,7 @@ class Trip:
     consist: str
     start_offset: int
     note: str
+    station_commands: dict
     dispose_commands: str
 
     def __post_init__(self):
@@ -51,6 +52,7 @@ class _TripConfig:
     start_offset: int
     note: str
     dispose_commands: str
+    station_commands: dict
     station_map: dict
 
 
@@ -96,11 +98,19 @@ class Timetable:
                 stop = stops_index.get((i, s_name), None)
                 if stop is None:
                     yield ''
-                elif (stop.arrival.hour == stop.departure.hour
+                    continue
+
+                if (stop.arrival.hour == stop.departure.hour
                         and stop.arrival.minute == stop.departure.minute):
-                    yield strftime(stop.arrival)
+                    time = strftime(stop.arrival)
                 else:
-                    yield f'{strftime(stop.arrival)}-{strftime(stop.departure)}'
+                    time = f'{strftime(stop.arrival)}-{strftime(stop.departure)}'
+
+                commands = trip.station_commands.get(s_name, '')
+                if commands:
+                    yield f'{time} {commands}'
+                else:
+                    yield time
 
         def station_mappings(s_name: str):
             for i, trip in enumerate(ordered_trips):
@@ -237,6 +247,7 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             start_offset=-120,
             note='',
             dispose_commands='',
+            station_commands={},
             station_map={}))
         trip_groups = {}
         for i, group in enumerate(block['groups']):
@@ -249,8 +260,10 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
                 config.note = group.get('note', config.note)
                 config.dispose_commands = \
                     group.get('dispose', config.dispose_commands)
-                config.station_map.update({str(stop_id): s_name for stop_id, s_name
-                                           in group.get('station_map', {}).items()})
+                config.station_commands.update(
+                    _strkeys(group.get('station_commands', {})))
+                config.station_map.update(
+                    _strkeys(group.get('station_map', {})))
                 trip_groups[trip_id] = i
 
         # Select all filtered trips.
@@ -265,7 +278,7 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         all_stops = chain(*((stop_id for stop_id, _, _ in stops)
                             for stops in trips_sat.values()))
         auto_map = _map_stations(route, feed, mit.unique_everseen(all_stops))
-        gtfs_map = {str(k): v for k, v in block.get('station_map', {}).items()}
+        gtfs_map = _strkeys(block.get('station_map', {}))
 
         # Add all Trips to Timetable.
         feed_trips_indexed = feed_trips.set_index('trip_id')
@@ -298,6 +311,7 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
                 stops=stops,
                 start_offset=config.start_offset,
                 note=config.note,
+                station_commands=config.station_commands,
                 dispose_commands=config.dispose_commands)
         for i in range(len(block['groups'])):
             trips = list(filter(lambda trip: trip is not None,
@@ -375,6 +389,9 @@ def _select(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
             raise KeyError(f'not a valid GTFS trip attribute: {prop}')
         df = df[df[prop].astype(str).str.match(regex)]
     return df
+
+
+def _strkeys(d: dict) -> dict: return {str(k): v for k, v in d.items()}
 
 
 def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
