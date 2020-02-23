@@ -253,7 +253,7 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         all_stops = chain(*((stop_id for stop_id, _, _ in stops)
                             for stops in trips_sat.values()))
         auto_map = _map_stations(route, feed, mit.unique_everseen(all_stops))
-        gtfs_map = block.get('station_map', {})
+        gtfs_map = {str(k): v for k, v in block.get('station_map', {}).items()}
 
         # Add all Trips to Timetable.
         for _, trip in feed_trips[feed_trips['trip_id']
@@ -262,7 +262,8 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
                       if trip['trip_id'] in group_trips[i]]
             trip_map = {}
             for group in groups:
-                trip_map.update(group.get('station_map', {}))
+                trip_map.update({str(k): v for k, v
+                                 in group.get('station_map', {}).items()})
 
             def map_station(stop_id: str) -> str:
                 return trip_map.get(stop_id,
