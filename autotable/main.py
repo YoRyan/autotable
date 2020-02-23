@@ -70,7 +70,7 @@ class Timetable:
 
         ordered_stations = Timetable._order_stations(
             self.trips, iter(self.route.stations().keys()))
-        ordered_trips = Timetable._order_trips(self.trips, ordered_stations)
+        ordered_trips = self.trips
 
         def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
 
@@ -182,26 +182,6 @@ class Timetable:
             cost = tuple(x + y for x, y in zip(cost, t))
         return cost
 
-    def _order_trips(trips: list, station_order: list) -> list:
-        order_index = dict((s_name, i) for i, s_name in enumerate(station_order))
-
-        # TODO try to detect branching
-        forwards = []
-        backwards = []
-        for trip in trips:
-            def stations() -> iter: return (stop.station for stop in trip.stops)
-            forward_pairs = mit.quantify(order_index[s1] < order_index[s2]
-                                         for s1, s2 in mit.pairwise(stations()))
-            backward_pairs = max(0, mit.ilen(stations()) - 1 - forward_pairs)
-            if forward_pairs >= backward_pairs:
-                forwards.append(trip)
-            else:
-                backwards.append(trip)
-
-        forwards.sort(key=lambda trip: trip.start_time)
-        backwards.sort(key=lambda trip: trip.start_time)
-        return forwards + backwards
-
 
 Stop = namedtuple('Stop', ['station', 'mapped_stop_id', 'mapped_stop_name',
                            'arrival', 'departure', 'commands'])
@@ -289,37 +269,42 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
 
         # Add all Trips to Timetable.
         feed_trips_indexed = feed_trips.set_index('trip_id')
-        for i, group in enumerate(block['groups']):
-            for trip_id in grouped_trips[i]:
-                def map_station(stop_id: str) -> str:
-                    return trip_configs[trip_id].station_map.get(
-                        stop_id, gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
+        def make_trip(trip_id: str) -> Trip:
+            def map_station(stop_id: str) -> str:
+                return trip_configs[trip_id].station_map.get(
+                    stop_id, gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
 
-                def stop_name(stop_id: str) -> str:
-                    stops_indexed = feed.stops.set_index('stop_id')
-                    return stops_indexed.at[stop_id, 'stop_name']
+            def stop_name(stop_id: str) -> str:
+                stops_indexed = feed.stops.set_index('stop_id')
+                return stops_indexed.at[stop_id, 'stop_name']
 
-                stops = [Stop(station=map_station(stop_id),
-                              mapped_stop_id=stop_id,
-                              mapped_stop_name=stop_name(stop_id),
-                              arrival=arrival,
-                              departure=departure,
-                              commands='')
-                         for stop_id, arrival, departure in trips_sat[trip_id]
-                         if map_station(stop_id) is not None]
-                if len(stops) < 2:
-                    continue
+            stops = [Stop(station=map_station(stop_id),
+                          mapped_stop_id=stop_id,
+                          mapped_stop_name=stop_name(stop_id),
+                          arrival=arrival,
+                          departure=departure,
+                          commands='')
+                     for stop_id, arrival, departure in trips_sat[trip_id]
+                     if map_station(stop_id) is not None]
+            if len(stops) < 2:
+                return None
 
-                config = trip_configs[trip_id]
-                trip = feed_trips_indexed.loc[trip_id]
-                tt.trips.append(Trip(
-                    name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
-                    path=config.path,
-                    consist=config.consist,
-                    stops=stops,
-                    start_offset=config.start_offset,
-                    note=config.note,
-                    dispose_commands=config.dispose_commands))
+            config = trip_configs[trip_id]
+            trip = feed_trips_indexed.loc[trip_id]
+            return Trip(
+                name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
+                path=config.path,
+                consist=config.consist,
+                stops=stops,
+                start_offset=config.start_offset,
+                note=config.note,
+                dispose_commands=config.dispose_commands)
+        for i in range(len(block['groups'])):
+            trips = list(filter(lambda trip: trip is not None,
+                                (make_trip(trip_id) for trip_id in grouped_trips[i])))
+            trips.sort(key=lambda trip: trip.start_time)
+            tt.trips += trips
+
     return tt
 
 
