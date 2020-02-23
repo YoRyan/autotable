@@ -403,6 +403,8 @@ def _map_stations(
             {s_name: similarity(stop['stop_name'], s_name)
              for s_name, s_list in route.stations().items()
              if any(dist_km(platform.latlon, latlon) < 10.0 for platform in s_list)}
+        matches = {s_name: similarity for s_name, similarity in matches.items()
+                   if similarity >= 0}
         if len(matches) == 0:
             return None
         else:
