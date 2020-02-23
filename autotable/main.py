@@ -66,9 +66,9 @@ class Timetable:
         self.station_commands = {}
 
     def write_csv(self, fp):
-        # csv settings per the Open Rails manual, 11.2.1 "Data definition"
-        # https://open-rails.readthedocs.io/en/latest/timetable.html#data-definition
-        writer = csv.writer(fp, delimiter=';', quoting=csv.QUOTE_NONE)
+        # csv settings per the May 2017 timetable document
+        # http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/
+        writer = csv.writer(fp, delimiter='\t', quoting=csv.QUOTE_NONE)
 
         ordered_stations = Timetable._order_stations(
             self.trips, iter(self.route.stations().keys()))
@@ -210,7 +210,7 @@ def main():
 
     with open(args.yaml, 'rt') as fp:
         timetable = load_config(fp, MSTSInstall(args.msts), args.yaml.stem)
-    with open(args.yaml.parent/f'{args.yaml.stem}.timetable_or', 'wt') as fp:
+    with open(args.yaml.parent/f'{args.yaml.stem}.timetable-or', 'wt') as fp:
         timetable.write_csv(fp)
 
 
