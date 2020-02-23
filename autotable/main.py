@@ -124,7 +124,7 @@ class Timetable:
 
     def _order_stations(trips: list, stations: iter) -> list:
         sm_trips = \
-            tuple(tuple(stop.station for stop in trip.stops) for trip in trips)
+            Counter(tuple(stop.station for stop in trip.stops) for trip in trips)
         with ProcessPoolExecutor() as executor:
             order = (next(stations),)
             for station in stations:
@@ -138,7 +138,7 @@ class Timetable:
                 order = future_to_key[best_future]
             return order
 
-    def _station_order_cost(compare_order: tuple, trip_orders: tuple) -> int:
+    def _station_order_cost(compare_order: tuple, trip_orders: Counter) -> int:
         def trip_cost(compare_order: tuple, trip_order: tuple) -> int:
             compare_index = {station: i for i, station in enumerate(compare_order)}
             trip_index = {station: i for i, station in enumerate(trip_order)}
@@ -175,8 +175,8 @@ class Timetable:
                      - length))
             return max(forward, backward)
 
-        trip_costs = \
-            (trip_cost(compare_order, trip_order) for trip_order in trip_orders)
+        trip_costs = (n*trip_cost(compare_order, trip_order)
+                      for trip_order, n in trip_orders.items())
         cost = next(trip_costs)
         for t in trip_costs:
             cost = tuple(x + y for x, y in zip(cost, t))
