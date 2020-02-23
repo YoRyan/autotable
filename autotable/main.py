@@ -287,8 +287,8 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             path = consist = note = dispose = ''
             start = -120
             for group in groups:
-                path = group.get('path', '')
-                consist = group.get('consist', '')
+                path = group.get('path', path)
+                consist = group.get('consist', consist)
                 start = group.get('start', start)
                 note = group.get('note', note)
                 dispose = group.get('dispose', dispose)
