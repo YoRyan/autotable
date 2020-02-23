@@ -148,6 +148,8 @@ class Timetable:
                      - mit.quantify(trip_index[s1] > trip_index[s2]
                                     for s1, s2 in mit.pairwise(common_stations))),
                 0,
+                mit.quantify(compare_index[s1] + 1 == compare_index[s2]
+                             for s1, s2 in mit.pairwise(common_stations)),
                 (-mit.quantify(trip_index[s1] + 1 != trip_index[s2]
                                for s1, s2 in mit.pairwise(common_stations))
                      - length))
@@ -157,6 +159,8 @@ class Timetable:
                      - mit.quantify(trip_index[s1] < trip_index[s2]
                                     for s1, s2 in mit.pairwise(common_stations))),
                 -1,
+                mit.quantify(compare_index[s1] == compare_index[s2] + 1
+                             for s1, s2 in mit.pairwise(common_stations)),
                 (-mit.quantify(trip_index[s1] != trip_index[s2] + 1
                                for s1, s2 in mit.pairwise(common_stations))
                      - length))
