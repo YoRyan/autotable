@@ -305,6 +305,7 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             trips.sort(key=lambda trip: trip.start_time)
             tt.trips += trips
 
+    tt.station_commands = yd.get('station_commands', {})
     return tt
 
 
