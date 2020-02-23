@@ -93,11 +93,21 @@ class Timetable:
                 else:
                     yield f'{strftime(stop.arrival)}-{strftime(stop.departure)}'
 
+        def station_mappings(s_name: str):
+            for i, trip in enumerate(ordered_trips):
+                stop = stops_index.get((i, s_name), None)
+                if stop is None:
+                    yield ''
+                else:
+                    yield f'{stop.mapped_stop_id} - {stop.mapped_stop_name}'
+
         writer.writerow([])
         for s_name in ordered_stations:
             writer.writerow(
                 chain(iter((s_name, self.station_commands.get(s_name, ''), '')),
                       station_stops(s_name)))
+            writer.writerow(
+                chain(iter(('#comment', '', '',)), station_mappings(s_name)))
         writer.writerow([])
 
         writer.writerow(chain(iter(('#dispose', '', '')),
@@ -180,7 +190,8 @@ class Timetable:
         return forwards + backwards
 
 
-Stop = namedtuple('Stop', ['station', 'arrival', 'departure', 'commands'])
+Stop = namedtuple('Stop', ['station', 'mapped_stop_id', 'mapped_stop_name',
+                           'arrival', 'departure', 'commands'])
 
 
 def main():
@@ -253,7 +264,13 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
                 return trip_map.get(stop_id,
                     gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
 
+            def stop_name(stop_id: str) -> str:
+                stops_indexed = feed.stops.set_index('stop_id')
+                return stops_indexed.at[stop_id, 'stop_name']
+
             stops = [Stop(station=map_station(stop_id),
+                          mapped_stop_id=stop_id,
+                          mapped_stop_name=stop_name(stop_id),
                           arrival=arrival,
                           departure=departure,
                           commands='')
