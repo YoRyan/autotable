@@ -3,7 +3,7 @@ import csv
 import datetime as dt
 import re
 from argparse import ArgumentParser
-from collections import Counter, namedtuple
+from collections import Counter, defaultdict, namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
@@ -44,13 +44,23 @@ class Trip:
             (start_datetime + dt.timedelta(seconds=self.start_offset)).time()
 
 
+@dataclass
+class _TripConfig:
+    path: str
+    consist: str
+    start_offset: int
+    note: str
+    dispose_commands: str
+    station_map: dict
+
+
 class Timetable:
 
     def __init__(self, route: Route, date: dt.date, name: str):
         self.route = route
         self.date = date
         self.name = name
-        self.trips = {} # (gtfs path, trip id) -> Trip
+        self.trips = []
         self.station_commands = {}
 
     def write_csv(self, fp):
@@ -59,9 +69,8 @@ class Timetable:
         writer = csv.writer(fp, delimiter=';', quoting=csv.QUOTE_NONE)
 
         ordered_stations = Timetable._order_stations(
-            self.trips.values(), iter(self.route.stations().keys()))
-        ordered_trips = Timetable._order_trips(
-            list(self.trips.values()), ordered_stations)
+            self.trips, iter(self.route.stations().keys()))
+        ordered_trips = Timetable._order_trips(self.trips, ordered_stations)
 
         def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
 
@@ -240,14 +249,37 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
                     and group['consist'].casefold() not in all_consists):
                 raise RuntimeError(f"unknown consist '{group['consist']}'")
 
-        # Select all filtered trips.
+        # Read all trip attributes.
         feed_trips = _get_trips(feed, yd['date'])
-        group_trips = \
-            {i: set(trip_id for _, trip_id in _select(
-                 feed_trips, group.get('selection', {}))['trip_id'].iteritems())
-             for i, group in enumerate(block['groups'])}
+        trip_configs = defaultdict(lambda: _TripConfig(
+            path='',
+            consist='',
+            start_offset=-120,
+            note='',
+            dispose_commands='',
+            station_map={}))
+        trip_groups = {}
+        for i, group in enumerate(block['groups']):
+            rows = _select(feed_trips, group.get('selection', {}))
+            for _, trip_id in rows['trip_id'].iteritems():
+                config = trip_configs[trip_id]
+                config.path = group.get('path', config.path)
+                config.consist = group.get('consist', config.consist)
+                config.start_offset = group.get('start', config.start_offset)
+                config.note = group.get('note', config.note)
+                config.dispose_commands = \
+                    group.get('dispose', config.dispose_commands)
+                config.station_map.update({str(stop_id): s_name for stop_id, s_name
+                                           in group.get('station_map', {}).items()})
+                trip_groups[trip_id] = i
+
+        # Select all filtered trips.
+        grouped_trips = defaultdict(lambda: set())
+        for trip_id, config in trip_configs.items():
+            if config.path and config.consist:
+                grouped_trips[trip_groups[trip_id]].add(trip_id)
         trips_sat = {trip_id: list(_stops_and_times(feed, trip_id))
-                     for trip_id in chain(*group_trips.values())}
+                     for trip_id in chain(*grouped_trips.values())}
 
         # Collect and map all station names.
         all_stops = chain(*((stop_id for stop_id, _, _ in stops)
@@ -256,54 +288,38 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         gtfs_map = {str(k): v for k, v in block.get('station_map', {}).items()}
 
         # Add all Trips to Timetable.
-        for _, trip in feed_trips[feed_trips['trip_id']
-                .isin(chain(*group_trips.values()))].iterrows():
-            groups = [group for i, group in enumerate(block['groups'])
-                      if trip['trip_id'] in group_trips[i]]
-            trip_map = {}
-            for group in groups:
-                trip_map.update({str(k): v for k, v
-                                 in group.get('station_map', {}).items()})
+        feed_trips_indexed = feed_trips.set_index('trip_id')
+        for i, group in enumerate(block['groups']):
+            for trip_id in grouped_trips[i]:
+                def map_station(stop_id: str) -> str:
+                    return trip_configs[trip_id].station_map.get(
+                        stop_id, gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
 
-            def map_station(stop_id: str) -> str:
-                return trip_map.get(stop_id,
-                    gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
+                def stop_name(stop_id: str) -> str:
+                    stops_indexed = feed.stops.set_index('stop_id')
+                    return stops_indexed.at[stop_id, 'stop_name']
 
-            def stop_name(stop_id: str) -> str:
-                stops_indexed = feed.stops.set_index('stop_id')
-                return stops_indexed.at[stop_id, 'stop_name']
+                stops = [Stop(station=map_station(stop_id),
+                              mapped_stop_id=stop_id,
+                              mapped_stop_name=stop_name(stop_id),
+                              arrival=arrival,
+                              departure=departure,
+                              commands='')
+                         for stop_id, arrival, departure in trips_sat[trip_id]
+                         if map_station(stop_id) is not None]
+                if len(stops) < 2:
+                    continue
 
-            stops = [Stop(station=map_station(stop_id),
-                          mapped_stop_id=stop_id,
-                          mapped_stop_name=stop_name(stop_id),
-                          arrival=arrival,
-                          departure=departure,
-                          commands='')
-                     for stop_id, arrival, departure in trips_sat[trip['trip_id']]
-                     if map_station(stop_id) is not None]
-            if len(stops) < 2:
-                continue
-
-            path = consist = note = dispose = ''
-            start = -120
-            for group in groups:
-                path = group.get('path', path)
-                consist = group.get('consist', consist)
-                start = group.get('start', start)
-                note = group.get('note', note)
-                dispose = group.get('dispose', dispose)
-            if not path:
-                raise RuntimeError(f"trip {trip['trip_id']} is missing a path")
-            elif not consist:
-                raise RuntimeError(f"trip {trip['trip_id']} is missing a consist")
-            tt.trips[(feed_path, trip['trip_id'])] = Trip(
-                name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
-                path=path,
-                consist=consist,
-                stops=stops,
-                start_offset=start,
-                note=note,
-                dispose_commands=dispose)
+                config = trip_configs[trip_id]
+                trip = feed_trips_indexed.loc[trip_id]
+                tt.trips.append(Trip(
+                    name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
+                    path=config.path,
+                    consist=config.consist,
+                    stops=stops,
+                    start_offset=config.start_offset,
+                    note=config.note,
+                    dispose_commands=config.dispose_commands))
     return tt
 
 
