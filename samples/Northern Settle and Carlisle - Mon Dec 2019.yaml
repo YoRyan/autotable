@@ -3,16 +3,19 @@ date: 2019-12-02
 gtfs:
   - url: https://transitland-gtfs.s3.amazonaws.com/datastore-uploads/feed_version/d9fdfe685f3f476dd45d121098f0d921b26677bc.zip
     groups:
+      - note: $dec=2
+        consist: Class 50, 8 carriages
+
         # Towards Settle
       - selection:
             route_id: '^21049$'
         path: local service
-        consist: Class 50, 8 carriages
-        note: $dec 2
 
         # Towards Carlisle
       - selection:
             route_id: '^21205$'
         path: settle - carlisle
-        consist: Class 50, 8 carriages
-        note: $dec 2
+
+station_commands:
+    "": $stoptime=30
+    Carlisle: $stoptime=120
