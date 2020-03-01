@@ -59,7 +59,9 @@ gtfs:
             trip_short_name: '^your regex here$'
         path: some path
         consist: some consist
-        start: -MM:SS
+        start_time: -MM:SS
+        speed_mph: ''
+        delay: ''
         note: ''
         dispose: ''
     station_map:
@@ -133,6 +135,10 @@ by Open Rails timetables.)
 
 ###### start
 
+Set the *start* commands that apply when the trips spawn.
+
+###### start_time
+
 *Default: 120 seconds before*
 
 Set trip spawn times relative to their arrival times at their first on-route
@@ -161,6 +167,11 @@ Set *speed* commands in km/h units.
 ###### speed_mph
 
 Set *speed* commands in mi/h units.
+
+###### delay
+
+Set the *restart delay* commands that control fixed and random delays over the
+course of the trips.
 
 ###### dispose
 

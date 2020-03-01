@@ -32,10 +32,12 @@ class Trip:
     path: str
     consist: str
     start_offset: int
+    start_commands: str
     note: str
     speed_mps: str
     speed_kph: str
     speed_mph: str
+    delay_commands: str
     station_commands: dict
     dispose_commands: str
 
@@ -53,10 +55,12 @@ class _TripConfig:
     path: str
     consist: str
     start_offset: int
+    start_commands: str
     note: str
     speed_mps: str
     speed_kph: str
     speed_mph: str
+    delay_commands: str
     dispose_commands: str
     station_commands: dict
     station_map: dict
@@ -82,6 +86,12 @@ class Timetable:
 
         def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
 
+        def start_col(trip: Trip) -> str:
+            if trip.start_commands:
+                return f'{strftime(trip.start_time)} {trip.start_commands}'
+            else:
+                return strftime(trip.start_time)
+
         writer.writerow(chain(iter(('', '', '#comment')),
                               (trip.name for trip in ordered_trips)))
         writer.writerow(iter(('#comment', '', self.name)))
@@ -90,7 +100,7 @@ class Timetable:
         writer.writerow(chain(iter(('#consist', '', '')),
                               (trip.consist for trip in ordered_trips)))
         writer.writerow(chain(iter(('#start', '', '')),
-                              (strftime(trip.start_time) for trip in ordered_trips)))
+                              (start_col(trip) for trip in ordered_trips)))
         writer.writerow(chain(iter(('#note', '', '')),
                               (trip.note for trip in ordered_trips)))
         writer.writerow(chain(iter(('#speed', '', '')),
@@ -99,6 +109,8 @@ class Timetable:
                               (trip.speed_kph for trip in ordered_trips)))
         writer.writerow(chain(iter(('#speedmph', '', '')),
                               (trip.speed_mph for trip in ordered_trips)))
+        writer.writerow(chain(iter(('#restartdelay', '', '')),
+                              (trip.delay_commands for trip in ordered_trips)))
 
         stops_index = {}
         for i, trip in enumerate(ordered_trips):
@@ -260,10 +272,12 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             path='',
             consist='',
             start_offset=-120,
+            start_commands='',
             note='',
             speed_mps='',
             speed_kph='',
             speed_mph='',
+            delay_commands='',
             dispose_commands='',
             station_commands={},
             station_map={}))
@@ -274,11 +288,13 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
                 config = trip_configs[trip_id]
                 config.path = group.get('path', config.path)
                 config.consist = group.get('consist', config.consist)
-                config.start_offset = group.get('start', config.start_offset)
+                config.start_offset = group.get('start_time', config.start_offset)
+                config.start_commands = group.get('start', config.start_commands)
                 config.note = group.get('note', config.note)
                 config.speed_mps = group.get('speed_mps', config.speed_mps)
                 config.speed_kph = group.get('speed_kph', config.speed_kph)
                 config.speed_mph = group.get('speed_mph', config.speed_mph)
+                config.delay_commands = group.get('delay', config.delay_commands)
                 config.dispose_commands = \
                     group.get('dispose', config.dispose_commands)
                 config.station_commands.update(
@@ -327,14 +343,16 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             trip = feed_trips_indexed.loc[trip_id]
             return Trip(
                 name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
+                stops=stops,
                 path=config.path,
                 consist=config.consist,
-                stops=stops,
                 start_offset=config.start_offset,
+                start_commands=config.start_commands,
+                note=config.note,
                 speed_mps=config.speed_mps,
                 speed_kph=config.speed_kph,
                 speed_mph=config.speed_mph,
-                note=config.note,
+                delay_commands=config.delay_commands,
                 station_commands=config.station_commands,
                 dispose_commands=config.dispose_commands)
         for i in range(len(block['groups'])):
