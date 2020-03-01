@@ -25,7 +25,8 @@ class MSTSInstall:
                                                 'consists').iterdir()
                      if child.suffix.casefold() == '.con'.casefold())
         with ProcessPoolExecutor() as executor:
-            return executor.map(Consist, con_files)
+            consists = executor.map(Consist, con_files)
+        return {consist.id.casefold(): consist for consist in consists}
 
 
 class Route:

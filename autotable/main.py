@@ -19,7 +19,7 @@ import requests
 import yaml
 from gtfs_kit.helpers import weekday_to_str
 
-from autotable.mstsinstall import MSTSInstall, Route
+from autotable.mstsinstall import Consist, MSTSInstall, Route
 
 
 _GTFS_UNITS = 'm'
@@ -30,7 +30,7 @@ class Trip:
     name: str
     stops: list
     path: str
-    consist: str
+    consist: list
     start_offset: int
     start_commands: str
     note: str
@@ -53,7 +53,7 @@ class Trip:
 @dataclass
 class _TripConfig:
     path: str
-    consist: str
+    consist: list
     start_offset: int
     start_commands: str
     note: str
@@ -64,6 +64,23 @@ class _TripConfig:
     dispose_commands: str
     station_commands: dict
     station_map: dict
+
+
+@dataclass
+class _SubConsist:
+    consist: Consist
+    reverse: False
+
+    def __str__(self):
+        if re.match(r'[\+\$]', self.consist.id):
+            if self.reverse:
+                return f'<{self.consist.id}>$reverse'
+            else:
+                return f'<{self.consist.id}>'
+        elif self.reverse:
+            return f'{self.consist.id} $reverse'
+        else:
+            return self.consist.id
 
 
 class Timetable:
@@ -92,13 +109,16 @@ class Timetable:
             else:
                 return strftime(trip.start_time)
 
+        def consist_col(trip: Trip) -> str:
+            return '+'.join(str(subconsist) for subconsist in trip.consist)
+
         writer.writerow(chain(iter(('', '', '#comment')),
                               (trip.name for trip in ordered_trips)))
         writer.writerow(iter(('#comment', '', self.name)))
         writer.writerow(chain(iter(('#path', '', '')),
                               (trip.path for trip in ordered_trips)))
         writer.writerow(chain(iter(('#consist', '', '')),
-                              (trip.consist for trip in ordered_trips)))
+                              (consist_col(trip) for trip in ordered_trips)))
         writer.writerow(chain(iter(('#start', '', '')),
                               (start_col(trip) for trip in ordered_trips)))
         writer.writerow(chain(iter(('#note', '', '')),
@@ -244,7 +264,6 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
     route = next(r for r in install.routes
                  if r.id.casefold() == yd['route'].casefold())
     route_paths = set(path.id.casefold() for path in route.paths())
-    all_consists = set(consist.id.casefold() for consist in install.consists())
     tt = Timetable(route, yd['date'], name)
     for block in yd['gtfs']:
         if block.get('file', ''):
@@ -256,21 +275,17 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
         else:
             raise RuntimeError("GTFS block missing a 'file' or 'url'")
 
-        # Validate the path and consist fields.
+        # Validate the path field.
         for group in block['groups']:
             if ('path' in group
                     and group['path'].casefold() not in route_paths):
                 raise RuntimeError(f"unknown {route.id} path '{group['path']}'")
-            # TODO support the full syntax for timetable consists?
-            elif ('consist' in group
-                    and group['consist'].casefold() not in all_consists):
-                raise RuntimeError(f"unknown consist '{group['consist']}'")
 
         # Read all trip attributes.
         feed_trips = _get_trips(feed, yd['date'])
         trip_configs = defaultdict(lambda: _TripConfig(
             path='',
-            consist='',
+            consist=[],
             start_offset=-120,
             start_commands='',
             note='',
@@ -287,7 +302,8 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             for _, trip_id in rows['trip_id'].iteritems():
                 config = trip_configs[trip_id]
                 config.path = group.get('path', config.path)
-                config.consist = group.get('consist', config.consist)
+                if 'consist' in group:
+                    config.consist = _parse_consist(install, group['consist'])
                 config.start_offset = group.get('start_time', config.start_offset)
                 config.start_commands = group.get('start', config.start_commands)
                 config.note = group.get('note', config.note)
@@ -380,6 +396,22 @@ def _download_gtfs(url: str) -> gk.feed.Feed:
     gtfs = gk.read_gtfs(tf.name, dist_units=_GTFS_UNITS)
     Path(tf.name).unlink()
     return gtfs
+
+
+def _parse_consist(install: MSTSInstall, yd) -> list:
+    if not isinstance(yd, list):
+        return _parse_consist(install, [yd])
+
+    consists = install.consists()
+    def parse(subconsist: str) -> Consist:
+        split = subconsist.rsplit(maxsplit=1)
+        reverse = len(split) == 2 and split[1].casefold() == '$reverse'
+        con_id = (split[0] if reverse else subconsist).casefold()
+        if con_id not in consists:
+            raise RuntimeError(f"unknown consist '{con_id}'")
+        return _SubConsist(consist=consists[con_id], reverse=reverse)
+
+    return [parse(item) for item in yd]
 
 
 def _get_trips(feed: gk.feed.Feed, date: dt.date) -> pd.DataFrame:

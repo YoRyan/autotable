@@ -128,10 +128,12 @@ The filename of the trips' path, without the .pat extension.
 
 ###### consist
 
-The filename of trips' consist, without the .con extension.
+The filename of trips' consist, without the .con extension, OR a list of
+consist filenames without the .con extensions, which will be combined into a
+single train in-game.
 
-(Currently, autotable does not support the extended consist syntax supported
-by Open Rails timetables.)
+You may also append a ` $reverse` flag after the name of a consist to reverse
+its direction.
 
 ###### start
 
