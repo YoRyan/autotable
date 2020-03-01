@@ -48,6 +48,11 @@ class Route:
             self.name = data['PlatformName']
             self.station = data['Station']
 
+            if 'TrItemRData' not in data:
+                self.elevation_m = 0
+                self.latlon = (0, 0)
+                return
+
             rdata = data['TrItemRData'].values()
             self.elevation_m = rdata[1]
 
