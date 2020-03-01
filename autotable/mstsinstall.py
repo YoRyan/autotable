@@ -17,7 +17,8 @@ class MSTSInstall:
         route_dirs = (child for child in _ichild(self.path, 'routes').iterdir()
                       if child.is_dir())
         with ProcessPoolExecutor() as executor:
-            self.routes = executor.map(Route, route_dirs)
+            loaded_routes = executor.map(Route, route_dirs)
+        self.routes = {route.id.casefold(): route for route in loaded_routes}
 
     @lru_cache(maxsize=1)
     def consists(self) -> list:
@@ -109,7 +110,8 @@ class Route:
             for path in route_paths:
                 futures.append(
                     executor.submit(Route.Path, path, encoding=self._encoding))
-            return [future.result() for future in as_completed(futures)]
+            loaded_paths = [future.result() for future in as_completed(futures)]
+        return {path.id.casefold(): path for path in loaded_paths}
 
 
 class Consist:

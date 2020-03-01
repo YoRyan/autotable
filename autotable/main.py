@@ -29,7 +29,7 @@ _GTFS_UNITS = 'm'
 class Trip:
     name: str
     stops: list
-    path: str
+    path: Route.Path
     consist: list
     start_offset: int
     start_commands: str
@@ -52,7 +52,7 @@ class Trip:
 
 @dataclass
 class _TripConfig:
-    path: str
+    path: Route.Path
     consist: list
     start_offset: int
     start_commands: str
@@ -116,7 +116,7 @@ class Timetable:
                               (trip.name for trip in ordered_trips)))
         writer.writerow(iter(('#comment', '', self.name)))
         writer.writerow(chain(iter(('#path', '', '')),
-                              (trip.path for trip in ordered_trips)))
+                              (trip.path.id for trip in ordered_trips)))
         writer.writerow(chain(iter(('#consist', '', '')),
                               (consist_col(trip) for trip in ordered_trips)))
         writer.writerow(chain(iter(('#start', '', '')),
@@ -261,9 +261,7 @@ def main():
 
 def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
     yd = yaml.safe_load(fp)
-    route = next(r for r in install.routes
-                 if r.id.casefold() == yd['route'].casefold())
-    route_paths = set(path.id.casefold() for path in route.paths())
+    route = install.routes[yd['route'].casefold()]
     tt = Timetable(route, yd['date'], name)
     for block in yd['gtfs']:
         if block.get('file', ''):
@@ -274,12 +272,6 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             feed = _download_gtfs(feed_path)
         else:
             raise RuntimeError("GTFS block missing a 'file' or 'url'")
-
-        # Validate the path field.
-        for group in block['groups']:
-            if ('path' in group
-                    and group['path'].casefold() not in route_paths):
-                raise RuntimeError(f"unknown {route.id} path '{group['path']}'")
 
         # Read all trip attributes.
         feed_trips = _get_trips(feed, yd['date'])
@@ -301,7 +293,8 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             rows = _select(feed_trips, group.get('selection', {}))
             for _, trip_id in rows['trip_id'].iteritems():
                 config = trip_configs[trip_id]
-                config.path = group.get('path', config.path)
+                if 'path' in group:
+                    config.path = _parse_path(route, group['path'])
                 if 'consist' in group:
                     config.consist = _parse_consist(install, group['consist'])
                 config.start_offset = group.get('start_time', config.start_offset)
@@ -396,6 +389,14 @@ def _download_gtfs(url: str) -> gk.feed.Feed:
     gtfs = gk.read_gtfs(tf.name, dist_units=_GTFS_UNITS)
     Path(tf.name).unlink()
     return gtfs
+
+
+def _parse_path(route: Route, yd: str) -> Route.Path:
+    paths = route.paths()
+    path_id = yd.casefold()
+    if path_id not in paths:
+        raise RuntimeError(f"unknown path '{path_id}'")
+    return paths[path_id]
 
 
 def _parse_consist(install: MSTSInstall, yd) -> list:
