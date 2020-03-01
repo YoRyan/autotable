@@ -10,7 +10,7 @@ buildOptions = dict(packages = ['pyproj.datadir'],
 base = 'Console'
 
 executables = [
-    Executable('autotable.py', base=base)
+    Executable('autotable/main.py', base=base, targetName="autotable")
 ]
 
 setup(name='autotable',
