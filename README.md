@@ -68,6 +68,10 @@ gtfs:
         station name: ''
 ```
 
+(Unfortunately, the Open Rails manual does not yet document all available
+commands. Refer to the May 2017 timetable
+[design document](http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/).)
+
 Recipes should be YAML dictionaries with the following keys:
 
 #### route
@@ -131,10 +135,10 @@ by Open Rails timetables.)
 
 *Default: 120 seconds before*
 
-Set the spawn times for these trips relative to their arrival times at their
-first on-route stops.
+Set trip spawn times relative to their arrival times at their first on-route
+stops.
 
-Negative values push the time back, while positive values move it forward
+Negative values push the start time back, while positive values move it forward
 (thus spawning a "late" train).
 
 You will want to adjust this based on the distance between the path's start
@@ -142,31 +146,30 @@ node and its first stop.
 
 ###### note
 
-Set *train* commands that apply for the entire run. The Open Rails manual
+Set *train* commands. The Open Rails manual
 [suggests](https://open-rails.readthedocs.io/en/stable/timetable.html#special-rows)
 using `$dec=2` or `$dec=3` for modern equipment.
 
-(Unfortunately, the manual does not yet document all available commands. Refer
-to the May 2017 timetable
-[design document](http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/).)
+###### speed_mps
+
+Set *speed* commands in m/s units.
+
+###### speed_kph
+
+Set *speed* commands in km/h units.
+
+###### speed_mph
+
+Set *speed* commands in mi/h units.
 
 ###### dispose
 
 Set the *dispose* commands that apply when the trips terminate at their last
 represented stations.
 
-(Unfortunately, the manual does not yet document all available commands. Refer
-to the May 2017 timetable
-[design document](http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/).)
-
 ###### station_commands
 
 A dictionary that maps in-game station names to *station stop* commands.
-Applies only to trips selected by this `groups` block.
-
-(Unfortunately, the manual does not yet document all available commands. Refer
-to the May 2017 timetable
-[design document](http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/).)
 
 ###### station_map
 
@@ -198,7 +201,3 @@ specifically defined for themselves.
 (Protip: Route builders often forget to change the minimum platform wait time
 from the MSTS-default 3 minutes, so use the `$stoptime=s` command to specify
 your own.)
-
-(Unfortunately, the manual does not yet document all available commands. Refer
-to the May 2017 timetable
-[design document](http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/).)
