@@ -332,12 +332,14 @@ def _read_gtfs(path: Path) -> gk.feed.Feed:
 
 @lru_cache(maxsize=8)
 def _download_gtfs(url: str) -> gk.feed.Feed:
-    with NamedTemporaryFile() as tf:
-        with requests.get(url, stream=True) as req:
-            for chunk in req.iter_content(chunk_size=128):
-                tf.write(chunk)
-        tf.seek(0)
-        return gk.read_gtfs(tf.name, dist_units=_GTFS_UNITS)
+    tf = NamedTemporaryFile(delete=False)
+    with requests.get(url, stream=True) as req:
+        for chunk in req.iter_content(chunk_size=128):
+            tf.write(chunk)
+    tf.close()
+    gtfs = gk.read_gtfs(tf.name, dist_units=_GTFS_UNITS)
+    Path(tf.name).unlink()
+    return gtfs
 
 
 def _get_trips(feed: gk.feed.Feed, date: dt.date) -> pd.DataFrame:
