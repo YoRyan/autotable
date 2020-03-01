@@ -198,6 +198,10 @@ looking for words that are common to both the GTFS and in-game names. Usually,
 this heuristic gets it right, but you can fine-tune the results by adding
 mappings here, which will override the automatic ones.
 
+As a debugging aid, when autotable writes the final timetable, it adds a
+`#comment` row beneath every station that contains the GTFS stop(s) that were
+mapped to it.
+
 Specify a blank station name to denote a GTFS stop that explicitly has no
 in-game equivalent, to resolve ambiguous cases where the same stop apparently
 maps to multiple stations.
