@@ -33,6 +33,9 @@ class Trip:
     consist: str
     start_offset: int
     note: str
+    speed_mps: str
+    speed_kph: str
+    speed_mph: str
     station_commands: dict
     dispose_commands: str
 
@@ -51,6 +54,9 @@ class _TripConfig:
     consist: str
     start_offset: int
     note: str
+    speed_mps: str
+    speed_kph: str
+    speed_mph: str
     dispose_commands: str
     station_commands: dict
     station_map: dict
@@ -87,6 +93,12 @@ class Timetable:
                               (strftime(trip.start_time) for trip in ordered_trips)))
         writer.writerow(chain(iter(('#note', '', '')),
                               (trip.note for trip in ordered_trips)))
+        writer.writerow(chain(iter(('#speed', '', '')),
+                              (trip.speed_mps for trip in ordered_trips)))
+        writer.writerow(chain(iter(('#speedkph', '', '')),
+                              (trip.speed_kph for trip in ordered_trips)))
+        writer.writerow(chain(iter(('#speedmph', '', '')),
+                              (trip.speed_mph for trip in ordered_trips)))
 
         stops_index = {}
         for i, trip in enumerate(ordered_trips):
@@ -249,6 +261,9 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
             consist='',
             start_offset=-120,
             note='',
+            speed_mps='',
+            speed_kph='',
+            speed_mph='',
             dispose_commands='',
             station_commands={},
             station_map={}))
@@ -261,6 +276,9 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
                 config.consist = group.get('consist', config.consist)
                 config.start_offset = group.get('start', config.start_offset)
                 config.note = group.get('note', config.note)
+                config.speed_mps = group.get('speed_mps', config.speed_mps)
+                config.speed_kph = group.get('speed_kph', config.speed_kph)
+                config.speed_mph = group.get('speed_mph', config.speed_mph)
                 config.dispose_commands = \
                     group.get('dispose', config.dispose_commands)
                 config.station_commands.update(
@@ -313,6 +331,9 @@ def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
                 consist=config.consist,
                 stops=stops,
                 start_offset=config.start_offset,
+                speed_mps=config.speed_mps,
+                speed_kph=config.speed_kph,
+                speed_mph=config.speed_mph,
                 note=config.note,
                 station_commands=config.station_commands,
                 dispose_commands=config.dispose_commands)
