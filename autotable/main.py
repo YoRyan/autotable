@@ -19,7 +19,7 @@ import requests
 import yaml
 from gtfs_kit.helpers import weekday_to_str
 
-from autotable.mstsinstall import Consist, MSTSInstall, Route
+import autotable.mstsinstall as msts
 
 
 _GTFS_UNITS = 'm'
@@ -29,7 +29,7 @@ _GTFS_UNITS = 'm'
 class Trip:
     name: str
     stops: list
-    path: Route.Path
+    path: msts.Route.Path
     consist: list
     start_offset: int
     start_commands: str
@@ -52,7 +52,7 @@ class Trip:
 
 @dataclass
 class _TripConfig:
-    path: Route.Path
+    path: msts.Route.Path
     consist: list
     start_offset: int
     start_commands: str
@@ -68,7 +68,7 @@ class _TripConfig:
 
 @dataclass
 class _SubConsist:
-    consist: Consist
+    consist: msts.Consist
     reverse: False
 
     def __str__(self):
@@ -85,7 +85,7 @@ class _SubConsist:
 
 class Timetable:
 
-    def __init__(self, route: Route, date: dt.date, name: str):
+    def __init__(self, route: msts.Route, date: dt.date, name: str):
         self.route = route
         self.date = date
         self.name = name
@@ -253,13 +253,13 @@ def main():
     args = parser.parse_args()
 
     with open(args.yaml, 'rt') as fp:
-        timetable = load_config(fp, MSTSInstall(args.msts), args.yaml.stem)
+        timetable = load_config(fp, msts.MSTSInstall(args.msts), args.yaml.stem)
     with open(args.yaml.parent/f'{args.yaml.stem}.timetable-or', 'wt',
-              newline='') as fp:
+              newline='', encoding=msts.ENCODING) as fp:
         timetable.write_csv(fp)
 
 
-def load_config(fp, install: MSTSInstall, name: str) -> Timetable:
+def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
     yd = yaml.safe_load(fp)
     route = install.routes[yd['route'].casefold()]
     tt = Timetable(route, yd['date'], name)
@@ -391,7 +391,7 @@ def _download_gtfs(url: str) -> gk.feed.Feed:
     return gtfs
 
 
-def _parse_path(route: Route, yd: str) -> Route.Path:
+def _parse_path(route: msts.Route, yd: str) -> msts.Route.Path:
     paths = route.paths()
     path_id = yd.casefold()
     if path_id not in paths:
@@ -399,12 +399,12 @@ def _parse_path(route: Route, yd: str) -> Route.Path:
     return paths[path_id]
 
 
-def _parse_consist(install: MSTSInstall, yd) -> list:
+def _parse_consist(install: msts.MSTSInstall, yd) -> list:
     if not isinstance(yd, list):
         return _parse_consist(install, [yd])
 
     consists = install.consists()
-    def parse(subconsist: str) -> Consist:
+    def parse(subconsist: str) -> msts.Consist:
         split = subconsist.rsplit(maxsplit=1)
         reverse = len(split) == 2 and split[1].casefold() == '$reverse'
         con_id = (split[0] if reverse else subconsist).casefold()
@@ -493,7 +493,7 @@ def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
 
 
 def _map_stations(
-        route: Route, feed: gk.feed.Feed, stop_ids: iter, init_map: dict={}) -> dict:
+        route: msts.Route, feed: gk.feed.Feed, stop_ids: iter, init_map: dict={}) -> dict:
     @lru_cache(maxsize=64)
     def tokens(s: str) -> list: return re.split('[ \t:;,-]+', s.casefold())
 
