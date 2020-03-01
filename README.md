@@ -131,8 +131,8 @@ by Open Rails timetables.)
 
 *Default: 120 seconds before*
 
-Set the spawn time for this trip relative to the arrival time at its first
-on-route stop.
+Set the spawn times for these trips relative to their arrival times at their
+first on-route stops.
 
 Negative values push the time back, while positive values move it forward
 (thus spawning a "late" train).
@@ -142,9 +142,9 @@ node and its first stop.
 
 ###### note
 
-Set train commands that apply for the entire run. The Open Rails manual
+Set *train* commands that apply for the entire run. The Open Rails manual
 [suggests](https://open-rails.readthedocs.io/en/stable/timetable.html#special-rows)
-using `$dec 2` or `$dec 3` for modern equipment.
+using `$dec=2` or `$dec=3` for modern equipment.
 
 (Unfortunately, the manual does not yet document all available commands. Refer
 to the May 2017 timetable
@@ -152,8 +152,17 @@ to the May 2017 timetable
 
 ###### dispose
 
-Set the disposal commands that apply when the trips terminate at the last
-represented station.
+Set the *dispose* commands that apply when the trips terminate at their last
+represented stations.
+
+(Unfortunately, the manual does not yet document all available commands. Refer
+to the May 2017 timetable
+[design document](http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/).)
+
+###### station_commands
+
+A dictionary that maps in-game station names to *station stop* commands.
+Applies only to trips selected by this `groups` block.
 
 (Unfortunately, the manual does not yet document all available commands. Refer
 to the May 2017 timetable
@@ -162,11 +171,6 @@ to the May 2017 timetable
 ###### station_map
 
 This is equivalent to the `station_map` field of the `gtfs` block (below),
-except that it applies only to trips selected by this `groups` block.
-
-###### station_commands
-
-This is equivalent to the `station_commands` field of the `gtfs` block (below),
 except that it applies only to trips selected by this `groups` block.
 
 ##### station_map
@@ -186,7 +190,7 @@ maps to multiple stations.
 
 #### station_commands
 
-A dictionary that maps in-game station names to station stop commands.
+A dictionary that maps in-game station names to *station* commands.
 
 The special empty key `""` applies to all stations that do not have commands
 specifically defined for themselves.
