@@ -210,7 +210,8 @@ def main():
 
     with open(args.yaml, 'rt') as fp:
         timetable = load_config(fp, MSTSInstall(args.msts), args.yaml.stem)
-    with open(args.yaml.parent/f'{args.yaml.stem}.timetable-or', 'wt') as fp:
+    with open(args.yaml.parent/f'{args.yaml.stem}.timetable-or', 'wt',
+              newline='') as fp:
         timetable.write_csv(fp)
 
 
