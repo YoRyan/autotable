@@ -233,14 +233,22 @@ class Timetable:
 
         trip_costs = (n*trip_cost(compare_order, trip_order)
                       for trip_order, n in trip_orders.items())
-        cost = next(trip_costs)
+        try:
+            cost = next(trip_costs)
+        except StopIteration:
+            return 0.0
         for t in trip_costs:
             cost = tuple(x + y for x, y in zip(cost, t))
         return cost
 
 
-Stop = namedtuple('Stop', ['station', 'mapped_stop_id', 'mapped_stop_name',
-                           'arrival', 'departure', 'commands'])
+TripStop = namedtuple('TripStop', ['station', 'mapped_stop_id', 'mapped_stop_name',
+                                   'arrival', 'departure'])
+
+
+_StopTime = namedtuple(
+    '_StopTime', ['station', 'mapped_stop_id', 'arrival_days_elapsed', 'arrival',
+                  'departure_days_elapsed', 'departure'])
 
 
 def main():
@@ -261,8 +269,17 @@ def main():
 
 def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
     yd = yaml.safe_load(fp)
+
+    route_id = yd.get('route', None)
+    if not isinstance(route_id, str):
+        raise RuntimeError('route ID wasn\'t a string')
     route = install.routes[yd['route'].casefold()]
-    tt = Timetable(route, yd['date'], name)
+
+    date = yd.get('date', None)
+    if not isinstance(date, dt.date):
+        raise RuntimeError('date wasn\'t readable by PyYAML')
+
+    tt = Timetable(route, date, name)
     for block in yd['gtfs']:
         if block.get('file', ''):
             feed_path = block['file']
@@ -273,8 +290,7 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
         else:
             raise RuntimeError("GTFS block missing a 'file' or 'url'")
 
-        # Read all trip attributes.
-        feed_trips = _get_trips(feed, yd['date'])
+        # Read attributes from trip blocks.
         trip_configs = defaultdict(lambda: _TripConfig(
             path='',
             consist=[],
@@ -290,7 +306,7 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
             station_map={}))
         trip_groups = {}
         for i, group in enumerate(block['groups']):
-            rows = _select(feed_trips, group.get('selection', {}))
+            rows = _filter_trips(feed.trips, group.get('selection', {}))
             for _, trip_id in rows['trip_id'].iteritems():
                 config = trip_configs[trip_id]
                 if 'path' in group:
@@ -312,47 +328,47 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                     _strkeys(group.get('station_map', {})))
                 trip_groups[trip_id] = i
 
-        # Select all filtered trips.
+        # Group trips by trip block.
         grouped_trips = defaultdict(lambda: set())
         for trip_id, config in trip_configs.items():
             if config.path and config.consist:
                 grouped_trips[trip_groups[trip_id]].add(trip_id)
-        trips_sat = {trip_id: list(_stops_and_times(feed, trip_id))
-                     for trip_id in chain(*grouped_trips.values())}
 
-        # Collect and map all station names.
-        all_stops = chain(*((stop_id for stop_id, _, _ in stops)
-                            for stops in trips_sat.values()))
-        auto_map = _map_stations(route, feed, mit.unique_everseen(all_stops))
+        # Map GTFS stops to station names.
+        auto_map = _map_stations(route, feed)
         gtfs_map = _strkeys(block.get('station_map', {}))
+        def map_station(trip_id: str, stop_id: str) -> str:
+            trip_map = trip_configs[trip_id]
+            return trip_map.station_map.get(
+                stop_id, gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
 
         # Add all Trips to Timetable.
-        feed_trips_indexed = feed_trips.set_index('trip_id')
+        feed_trips_indexed = feed.get_trips().set_index('trip_id')
         def make_trip(trip_id: str) -> Trip:
-            def map_station(stop_id: str) -> str:
-                return trip_configs[trip_id].station_map.get(
-                    stop_id, gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
-
             def stop_name(stop_id: str) -> str:
                 stops_indexed = feed.stops.set_index('stop_id')
                 return stops_indexed.at[stop_id, 'stop_name']
 
-            stops = [Stop(station=map_station(stop_id),
-                          mapped_stop_id=stop_id,
-                          mapped_stop_name=stop_name(stop_id),
-                          arrival=arrival,
-                          departure=departure,
-                          commands='')
-                     for stop_id, arrival, departure in trips_sat[trip_id]
-                     if map_station(stop_id) is not None]
-            if len(stops) < 2:
+            stop_times = list(_stop_times(feed, trip_id, map_station))
+            if len(stop_times) < 2:
                 return None
+
+            day_offset = dt.timedelta(days=-stop_times[0].arrival_days_elapsed)
+            if not _is_trip_start(feed, trip_id, date + day_offset):
+                return None
+
+            def make_stop(st: _StopTime) -> TripStop:
+                return TripStop(station=st.station,
+                                mapped_stop_id=st.mapped_stop_id,
+                                mapped_stop_name=stop_name(st.mapped_stop_id),
+                                arrival=st.arrival,
+                                departure=st.departure)
 
             config = trip_configs[trip_id]
             trip = feed_trips_indexed.loc[trip_id]
             return Trip(
                 name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
-                stops=stops,
+                stops=[make_stop(st) for st in stop_times],
                 path=config.path,
                 consist=config.consist,
                 start_offset=config.start_offset,
@@ -415,7 +431,10 @@ def _parse_consist(install: msts.MSTSInstall, yd) -> list:
     return [parse(item) for item in yd]
 
 
-def _get_trips(feed: gk.feed.Feed, date: dt.date) -> pd.DataFrame:
+def _is_trip_start(feed: gk.feed.Feed, trip_id: str, date: dt.date) -> bool:
+    # This is theoretically identical to gtfs_kit.trips.is_trip_active(),
+    # but that function has trouble with some feeds, so we have to build our
+    # own implementation with our own fixes.
     def parse_date(s: str) -> dt.date:
         return dt.datetime.strptime(s.strip(), '%Y%m%d').date()
 
@@ -430,35 +449,31 @@ def _get_trips(feed: gk.feed.Feed, date: dt.date) -> pd.DataFrame:
     calendar = \
         (feed.calendar.set_index('service_id') if feed.calendar is not None
          else pd.DataFrame(columns=['service_id', 'start_date', 'end_date']))
-    # On some feeds, pandas interprets dates as int64's. Currently, GTFS Kit
-    # doesn't anticipate this condition, so we will.
+    # Sometimes, pandas interprets dates as integers, not strings.
     in_service = calendar[['start_date', 'end_date']].astype(str)
     weekdays = calendar.drop(['start_date', 'end_date'], axis=1).astype(bool)
 
-    # TODO: Also select multi-day trips that began on previous dates.
-    def is_active(trip: pd.Series) -> bool:
-        service_id = trip['service_id']
-        if (service_id, date) in calendar_dates.index:
-            exception = exceptions.at[(service_id, date), 'exception_type']
-            if exception == 1:
-                return True
-            elif exception == 2:
-                return False
-            else:
-                assert False
-        elif service_id in calendar.index:
-            in_range = parse_date(in_service.at[service_id, 'start_date']) \
-                <= date \
-                <= parse_date(in_service.at[service_id, 'end_date'])
-            day_match = weekdays.at[service_id, weekday_to_str(date.weekday())]
-            return in_range and day_match
-        else:
+    trip = feed.trips.loc[feed.trips['trip_id'].astype(str) == trip_id].iloc[0]
+    service_id = trip['service_id']
+    if (service_id, date) in calendar_dates.index:
+        exception = exceptions.at[(service_id, date), 'exception_type']
+        if exception == 1:
+            return True
+        elif exception == 2:
             return False
+        else:
+            assert False
+    elif service_id in calendar.index:
+        in_range = parse_date(in_service.at[service_id, 'start_date']) \
+            <= date \
+            <= parse_date(in_service.at[service_id, 'end_date'])
+        day_match = weekdays.at[service_id, weekday_to_str(date.weekday())]
+        return in_range and day_match
+    else:
+        return False
 
-    return feed.trips[feed.trips.apply(is_active, axis=1)]
 
-
-def _select(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+def _filter_trips(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
     for prop, regex in filters.items():
         if prop not in ['route_id', 'service_id', 'trip_id', 'trip_headsign',
                         'trip_short_name', 'direction_id', 'block_id',
@@ -471,29 +486,41 @@ def _select(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
 def _strkeys(d: dict) -> dict: return {str(k): v for k, v in d.items()}
 
 
-def _stops_and_times(feed: gk.feed.Feed, trip_id: str) -> iter:
-    def parse_time(s):
-        match = re.match(r'^(\d?\d):([012345]\d):([012345]\d)$', s.strip())
-        if not match:
-            raise ValueError(f'invalid GTFS time: {s}')
-        return dt.time(hour=int(match.group(1)) % 24,
-                       minute=int(match.group(2)),
-                       second=int(match.group(3)))
-
+def _stop_times(feed: gk.feed.Feed, trip_id: str, map_station) -> iter:
     trip = (feed.stop_times[feed.stop_times['trip_id'] == trip_id]
         .sort_values(by='stop_sequence'))
     times = trip[['arrival_time', 'departure_time']].astype(str)
-    stop = trip['stop_id'].astype(str)
+    stop_ids = trip['stop_id'].astype(str)
 
-    def parse_stop(idx: int) -> tuple:
-        return (stop.iat[idx],
-                parse_time(times.iloc[idx]['arrival_time']),
-                parse_time(times.iloc[idx]['departure_time']))
-    return (parse_stop(i) for i in range(len(trip)))
+    def parse_stop(idx: int) -> _StopTime:
+        stop_id = stop_ids.iat[idx]
+        station = map_station(trip_id, stop_id)
+        if not station:
+            return None
+
+        arrival_days, arrival = parse_time(times.iloc[idx]['arrival_time'])
+        departure_days, departure = parse_time(times.iloc[idx]['departure_time'])
+        return _StopTime(station=station,
+                         mapped_stop_id=stop_id,
+                         arrival_days_elapsed=arrival_days,
+                         arrival=arrival,
+                         departure_days_elapsed=departure_days,
+                         departure=departure)
+
+    def parse_time(s):
+        match = re.match(r'(\d?\d)\s*:\s*([012345]?\d)\s*:\s*([012345]?\d)', s)
+        if not match:
+            raise ValueError(f'invalid GTFS time: {s}')
+        hours = int(match.group(1))
+        return (hours//24, dt.time(hour=hours%24,
+                                   minute=int(match.group(2)),
+                                   second=int(match.group(3))))
+
+    return filter(lambda st: st is not None,
+                  (parse_stop(i) for i in range(len(trip))))
 
 
-def _map_stations(
-        route: msts.Route, feed: gk.feed.Feed, stop_ids: iter, init_map: dict={}) -> dict:
+def _map_stations(route: msts.Route, feed: gk.feed.Feed) -> dict:
     @lru_cache(maxsize=64)
     def tokens(s: str) -> list: return re.split('[ \t:;,-]+', s.casefold())
 
@@ -528,9 +555,11 @@ def _map_stations(
         else:
             return max(matches, key=matches.get)
 
-    return \
-        {stop['stop_id']: map_station(stop) for _, stop
-         in feed.stops[feed.stops['stop_id'].astype(str).isin(stop_ids)].iterrows()}
+    stops = feed.get_stops()
+    stops = stops.set_index(stops['stop_id'].astype(str))
+    stops['_mapped_station'] = stops.apply(map_station, axis=1)
+    stops = stops.filter(['_mapped_station'])
+    return stops.to_dict()['_mapped_station']
 
 
 if __name__ == '__main__':
