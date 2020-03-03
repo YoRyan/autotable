@@ -562,7 +562,6 @@ def _map_stations(route: msts.Route, feed: gk.feed.Feed) -> dict:
     stops = feed.get_stops()
     stops = stops.set_index(stops['stop_id'].astype(str))
     stops['_mapped_station'] = stops.apply(map_station, axis=1)
-    stops = stops.filter(['_mapped_station'])
     return stops.to_dict()['_mapped_station']
 
 
