@@ -7,7 +7,7 @@ from collections import Counter, defaultdict, namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from functools import lru_cache
-from itertools import chain, takewhile
+from itertools import chain, takewhile, tee
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -349,11 +349,11 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                 stops_indexed = feed.stops.set_index('stop_id')
                 return stops_indexed.at[stop_id, 'stop_name']
 
-            stop_times = list(_stop_times(feed, trip_id, map_station))
-            if len(stop_times) < 2:
+            st1, st2, st3 = tee(_stop_times(feed, trip_id, map_station), 3)
+            if mit.ilen(mit.take(2, st1)) < 2:
                 return None
 
-            day_offset = dt.timedelta(days=-stop_times[0].arrival_days_elapsed)
+            day_offset = dt.timedelta(days=-mit.first(st2).arrival_days_elapsed)
             if not _is_trip_start(feed, trip_id, date + day_offset):
                 return None
 
@@ -368,7 +368,7 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
             trip = feed_trips_indexed.loc[trip_id]
             return Trip(
                 name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
-                stops=[make_stop(st) for st in stop_times],
+                stops=[make_stop(st) for st in st3],
                 path=config.path,
                 consist=config.consist,
                 start_offset=config.start_offset,
