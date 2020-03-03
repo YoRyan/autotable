@@ -353,8 +353,13 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
             if mit.ilen(mit.take(2, st1)) < 2:
                 return None
 
-            day_offset = dt.timedelta(days=-mit.first(st2).arrival_days_elapsed)
-            if not _is_trip_start(feed, trip_id, date + day_offset):
+            config = trip_configs[trip_id]
+            first_st = mit.first(st2)
+            start_dt = dt.datetime.combine(
+                date + dt.timedelta(days=-first_st.arrival_days_elapsed),
+                first_st.arrival)
+            start_dt += dt.timedelta(seconds=config.start_offset)
+            if not _is_trip_start(feed, trip_id, start_dt.date()):
                 return None
 
             def make_stop(st: _StopTime) -> TripStop:
@@ -364,7 +369,6 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                                 arrival=st.arrival,
                                 departure=st.departure)
 
-            config = trip_configs[trip_id]
             trip = feed_trips_indexed.loc[trip_id]
             return Trip(
                 name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
