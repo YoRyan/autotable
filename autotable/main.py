@@ -24,6 +24,7 @@ from autotable.timetable import Timetable, Trip
 
 
 _GTFS_UNITS = 'm'
+_MIN_STOPS = 1
 
 
 @dataclass
@@ -181,7 +182,7 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                 return stops_indexed.at[stop_id, 'stop_name']
 
             st1, st2, st3 = tee(_stop_times(feed, trip_id, map_station), 3)
-            if ilen(take(2, st1)) < 2:
+            if ilen(take(_MIN_STOPS, st1)) < _MIN_STOPS:
                 return None
 
             config = trip_configs[trip_id]
