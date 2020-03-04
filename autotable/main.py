@@ -267,8 +267,16 @@ def main():
         print(args.version)
         return
 
+    print('Reading recipe ...')
+
     with open(args.yaml, 'rt') as fp:
         timetable = load_config(fp, msts.MSTSInstall(args.msts), args.yaml.stem)
+
+    print(f'Route: {timetable.route.name}')
+    print(f'Name: {timetable.name}')
+    print(f'{len(timetable.trips)} total trips')
+    print('Writing timetable ...')
+
     with open(args.yaml.parent/f'{args.yaml.stem}.timetable-or', 'wt',
               newline='', encoding=msts.ENCODING) as fp:
         timetable.write_csv(fp)
