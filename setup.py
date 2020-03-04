@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 import setuptools
 
+from autotable import __version__
+
+
 with open('README.md', 'r') as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name='autotable-YoRyan',
-    version='0.0.1',
+    version=__version__,
     author='Ryan Young',
     author_email='ryan@youngryan.com',
     description='An Open Rails timetable generator that uses GTFS data',

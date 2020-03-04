@@ -1,5 +1,8 @@
 from cx_Freeze import setup, Executable
 
+from autotable import __version__
+
+
 # Dependencies are automatically detected, but it might need
 # fine tuning.
 buildOptions = dict(packages = ['pyproj.datadir'],
@@ -14,7 +17,7 @@ executables = [
 ]
 
 setup(name='autotable',
-      version = '0.0.1',
+      version = __version__,
       description = 'An Open Rails timetable generator that uses GTFS data',
       options = dict(build_exe = buildOptions),
       executables = executables)

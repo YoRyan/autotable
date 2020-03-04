@@ -20,6 +20,7 @@ import yaml
 from gtfs_kit.helpers import weekday_to_str
 
 import autotable.mstsinstall as msts
+from autotable import __version__
 
 
 _GTFS_UNITS = 'm'
@@ -258,7 +259,13 @@ def main():
                         help='path to MSTS installation or mini-route')
     parser.add_argument('yaml', type=Path,
                         help='path to timetable recipe file')
+    parser.add_argument('-v', '--version', action='version',
+                        version=f'%(prog)s {__version__}')
     args = parser.parse_args()
+
+    if args.version:
+        print(args.version)
+        return
 
     with open(args.yaml, 'rt') as fp:
         timetable = load_config(fp, msts.MSTSInstall(args.msts), args.yaml.stem)
