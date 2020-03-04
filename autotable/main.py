@@ -57,7 +57,7 @@ class _SubConsist:
     reverse: False
 
     def __str__(self):
-        if re.match(r'[\+\$]', self.consist.id):
+        if re.search(r'[\+\$]', self.consist.id):
             if self.reverse:
                 return f'<{self.consist.id}>$reverse'
             else:
@@ -523,7 +523,7 @@ def _stop_times(feed: gk.feed.Feed, trip_id: str, map_station) -> iter:
                          departure=departure)
 
     def parse_time(s):
-        match = re.match(r'(\d?\d)\s*:\s*([012345]?\d)\s*:\s*([012345]?\d)', s)
+        match = re.search(r'(\d?\d)\s*:\s*([012345]?\d)\s*:\s*([012345]?\d)', s)
         if not match:
             raise ValueError(f'invalid GTFS time: {s}')
         hours = int(match.group(1))
