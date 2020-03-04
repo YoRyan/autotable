@@ -6,7 +6,7 @@ from autotable import __version__
 # Dependencies are automatically detected, but it might need
 # fine tuning.
 buildOptions = dict(packages = ['pyproj.datadir'],
-                    excludes = [],
+                    excludes = ['numpy.fft'],
                     # https://github.com/anthony-tuininga/cx_Freeze/issues/278#issuecomment-542316877
                     include_files = ['C:\\Windows\\System32\\vcruntime140.dll'])
 
