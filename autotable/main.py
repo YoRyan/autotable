@@ -263,7 +263,7 @@ def main():
                         version=f'%(prog)s {__version__}')
     args = parser.parse_args()
 
-    if args.version:
+    if 'version' in args:
         print(args.version)
         return
 
