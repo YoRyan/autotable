@@ -51,22 +51,6 @@ class Trip:
 
 
 @dataclass
-class _TripConfig:
-    path: msts.Route.Path
-    consist: list
-    start_offset: int
-    start_commands: str
-    note: str
-    speed_mps: str
-    speed_kph: str
-    speed_mph: str
-    delay_commands: str
-    dispose_commands: str
-    station_commands: dict
-    station_map: dict
-
-
-@dataclass
 class _SubConsist:
     consist: msts.Consist
     reverse: False
@@ -81,6 +65,26 @@ class _SubConsist:
             return f'{self.consist.id} $reverse'
         else:
             return self.consist.id
+
+
+TripStop = namedtuple('TripStop', ['station', 'mapped_stop_id', 'mapped_stop_name',
+                                   'arrival', 'departure'])
+
+
+@dataclass
+class _TripConfig:
+    path: msts.Route.Path
+    consist: list
+    start_offset: int
+    start_commands: str
+    note: str
+    speed_mps: str
+    speed_kph: str
+    speed_mph: str
+    delay_commands: str
+    dispose_commands: str
+    station_commands: dict
+    station_map: dict
 
 
 class Timetable:
@@ -240,10 +244,6 @@ class Timetable:
         for t in trip_costs:
             cost = tuple(x + y for x, y in zip(cost, t))
         return cost
-
-
-TripStop = namedtuple('TripStop', ['station', 'mapped_stop_id', 'mapped_stop_name',
-                                   'arrival', 'departure'])
 
 
 _StopTime = namedtuple(
@@ -435,10 +435,19 @@ def _parse_consist(install: msts.MSTSInstall, yd) -> list:
     return [parse(item) for item in yd]
 
 
+def _filter_trips(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
+    for prop, regex in filters.items():
+        if prop not in ['route_id', 'service_id', 'trip_id', 'trip_headsign',
+                        'trip_short_name', 'direction_id', 'block_id',
+                        'shape_id', 'wheelchair_accessible', 'bikes_allowed']:
+            raise KeyError(f'not a valid GTFS trip attribute: {prop}')
+        df = df[df[prop].astype(str).str.match(regex)]
+    return df
+
+
 def _is_trip_start(feed: gk.feed.Feed, trip_id: str, date: dt.date) -> bool:
-    # This is theoretically identical to gtfs_kit.trips.is_trip_active(),
-    # but that function has trouble with some feeds, so we have to build our
-    # own implementation with our own fixes.
+    """Equivalent to gtfs_kit.trips.is_trip_active(), but with our own fixes."""
+
     def parse_date(s: str) -> dt.date:
         return dt.datetime.strptime(s.strip(), '%Y%m%d').date()
 
@@ -475,19 +484,6 @@ def _is_trip_start(feed: gk.feed.Feed, trip_id: str, date: dt.date) -> bool:
         return in_range and day_match
     else:
         return False
-
-
-def _filter_trips(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
-    for prop, regex in filters.items():
-        if prop not in ['route_id', 'service_id', 'trip_id', 'trip_headsign',
-                        'trip_short_name', 'direction_id', 'block_id',
-                        'shape_id', 'wheelchair_accessible', 'bikes_allowed']:
-            raise KeyError(f'not a valid GTFS trip attribute: {prop}')
-        df = df[df[prop].astype(str).str.match(regex)]
-    return df
-
-
-def _strkeys(d: dict) -> dict: return {str(k): v for k, v in d.items()}
 
 
 def _stop_times(feed: gk.feed.Feed, trip_id: str, map_station) -> iter:
@@ -563,6 +559,9 @@ def _map_stations(route: msts.Route, feed: gk.feed.Feed) -> dict:
     stops = stops.set_index(stops['stop_id'].astype(str))
     stops['_mapped_station'] = stops.apply(map_station, axis=1)
     return stops.to_dict()['_mapped_station']
+
+
+def _strkeys(d: dict) -> dict: return {str(k): v for k, v in d.items()}
 
 
 if __name__ == '__main__':
