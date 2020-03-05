@@ -203,8 +203,15 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                                 departure=st.departure)
 
             trip = feed_trips_indexed.loc[trip_id]
+            route = \
+                feed.routes[feed.routes['route_id'] == trip['route_id']].squeeze()
+            route_name = (route.get('route_long_name', '')
+                          or route.get('route_short_name', ''))
             return Trip(
-                name=f"{trip['trip_short_name']} {trip['trip_headsign']}",
+                name=trip.get('trip_short_name', '') or trip_id,
+                headsign=trip.get('trip_headsign', ''),
+                route_name=route_name,
+                block=trip.get('block_id', ''),
                 stops=[make_stop(st) for st in st3],
                 path=config.path,
                 consist=config.consist,
@@ -299,7 +306,7 @@ def _is_trip_start(feed: gk.feed.Feed, trip_id: str, date: dt.date) -> bool:
     in_service = calendar[['start_date', 'end_date']].astype(str)
     weekdays = calendar.drop(['start_date', 'end_date'], axis=1).astype(bool)
 
-    trip = feed.trips.loc[feed.trips['trip_id'].astype(str) == trip_id].iloc[0]
+    trip = feed.trips[feed.trips['trip_id'].astype(str) == trip_id].squeeze()
     service_id = trip['service_id']
     if (service_id, date) in calendar_dates.index:
         exception = exceptions.at[(service_id, date), 'exception_type']

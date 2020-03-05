@@ -14,6 +14,9 @@ from autotable.mstsinstall import Route
 @dataclass
 class Trip:
     name: str
+    headsign: str
+    route_name: str
+    block: str
     stops: list
     path: Route.Path
     consist: list
@@ -54,6 +57,25 @@ class Timetable:
             self.trips, iter(self.route.stations().keys()))
         ordered_trips = self.trips
 
+        def trip_name(trip: Trip) -> str:
+            if trip.route_name:
+                return f'{trip.route_name} {trip.name}'
+            elif trip.headsign:
+                return f'{trip.name} {trip.headsign}'
+            else:
+                return trip.name
+        writer.writerow(chain(iter(('', '', '#comment')),
+                              (trip_name(trip) for trip in ordered_trips)))
+
+        writer.writerow(iter(('#comment', '', self.name)))
+        writer.writerow(chain(iter(('#path', '', '')),
+                              (trip.path.id for trip in ordered_trips)))
+
+        def consist_col(trip: Trip) -> str:
+            return '+'.join(str(subconsist) for subconsist in trip.consist)
+        writer.writerow(chain(iter(('#consist', '', '')),
+                              (consist_col(trip) for trip in ordered_trips)))
+
         def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
 
         def start_col(trip: Trip) -> str:
@@ -61,19 +83,9 @@ class Timetable:
                 return f'{strftime(trip.start_time)} {trip.start_commands}'
             else:
                 return strftime(trip.start_time)
-
-        def consist_col(trip: Trip) -> str:
-            return '+'.join(str(subconsist) for subconsist in trip.consist)
-
-        writer.writerow(chain(iter(('', '', '#comment')),
-                              (trip.name for trip in ordered_trips)))
-        writer.writerow(iter(('#comment', '', self.name)))
-        writer.writerow(chain(iter(('#path', '', '')),
-                              (trip.path.id for trip in ordered_trips)))
-        writer.writerow(chain(iter(('#consist', '', '')),
-                              (consist_col(trip) for trip in ordered_trips)))
         writer.writerow(chain(iter(('#start', '', '')),
                               (start_col(trip) for trip in ordered_trips)))
+
         writer.writerow(chain(iter(('#note', '', '')),
                               (trip.note for trip in ordered_trips)))
         writer.writerow(chain(iter(('#speed', '', '')),
