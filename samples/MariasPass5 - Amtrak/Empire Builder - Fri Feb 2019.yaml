@@ -1,0 +1,16 @@
+route: MariasPass5
+date: 2019-02-01
+gtfs:
+  - url: https://transitland-gtfs.s3.amazonaws.com/datastore-uploads/feed_version/d2483076c78b6d8b12cf67a1fae7c4f5fa5aaad4.zip
+    groups:
+      - consist: Class 50, 8 carriages
+
+        # Towards Shelby
+      - selection:
+            trip_short_name: '^8$'
+        path: YoRyan_Whtf-Slby
+
+        # Towards Whitefish
+      - selection:
+            trip_short_name: '^7$'
+        path: YoRyan_Slby-Whtf
