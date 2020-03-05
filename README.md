@@ -15,6 +15,17 @@ internal reader to parse Microsoft Train Simulator/Open Rails data files.
 
 ### Quick start
 
+#### Download autotable
+
+You'll find ready-to-run executables on the
+[releases](https://github.com/YoRyan/autotable/releases) page.
+
+(I apologize for the large package size. The program itself is quite small, but
+the supporting libraries and geographic data take up several hundred more
+megabytes of space.)
+
+#### Install from source
+
 As of February 2020, some of the PyPI dependencies will not build and install on
 Windows. You can get prebuilt wheels (install them in the listed order) courtesy
 of [Christoph Gohlke](https://www.lfd.uci.edu/~gohlke/pythonlibs/):
@@ -28,6 +39,17 @@ Then, to install autotable:
 ```
 >pip install git+https://github.com/YoRyan/autotable
 ```
+
+I use [cx_Freeze](https://anthony-tuininga.github.io/cx_Freeze/) to build
+redistributable Windows executables. If you wish to produce your own build, run:
+
+```
+>python setup_exe.py build
+```
+
+#### Usage
+
+autotable is a command-line program.
 
 ```
 >autotable --help
