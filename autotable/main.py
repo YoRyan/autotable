@@ -256,7 +256,11 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
             trips.sort(key=lambda trip: trip.start_time)
             tt.trips += trips
 
-    tt.station_commands = yd.get('station_commands', {})
+    top_station_commands = yd.get('station_commands', {})
+    for s_name, _ in top_station_commands.items():
+        if s_name != '':
+            validate_station(s_name)
+    tt.station_commands = top_station_commands
     return tt
 
 

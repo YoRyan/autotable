@@ -72,7 +72,8 @@ class Route:
             self.latlon = pp.transform(goode, pp.Proj('epsg:4326'), x, y)
 
     def __init__(self, path: Path, encoding=ENCODING):
-        df = _ichild(path, f'{path.name}.trk')
+        df = next(child for child in path.iterdir()
+                  if child.suffix.casefold() == '.trk')
         with open(df, encoding=encoding) as fp:
             d = kf.load(fp)
         desc = d['Tr_RouteFile']
