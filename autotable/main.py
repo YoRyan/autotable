@@ -105,15 +105,28 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
 
     route_id = yd.get('route', None)
     if not isinstance(route_id, str):
-        raise RuntimeError('route ID wasn\'t a string')
-    route = install.routes[yd['route'].casefold()]
+        raise RuntimeError("'route' missing or not a string")
+    route = install.routes.get(route_id.casefold(), None)
+    if not route:
+        raise RuntimeError(f"unknown route '{route_id}'")
+
+    route_stations = set(route.station_names())
+    def validate_station(station: str):
+        if station not in route_stations:
+            raise RuntimeError(f"{route.name} has no such station '{station}'")
 
     date = yd.get('date', None)
     if not isinstance(date, dt.date):
-        raise RuntimeError('date wasn\'t readable by PyYAML')
+        raise RuntimeError("'date' missing or not readable by PyYAML")
 
+    gtfs = yd.get('gtfs', None)
+    if not isinstance(gtfs, list):
+        raise RuntimeError("'gtfs' not present or not a list of dictionaries")
     tt = Timetable(route, date, name)
-    for block in yd['gtfs']:
+    for block in gtfs:
+        if not isinstance(block, dict):
+            raise RuntimeError("'gtfs' block wasn't a dictionary")
+
         if block.get('file', ''):
             feed_path = block['file']
             feed = _read_gtfs(feed_path)
@@ -121,7 +134,13 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
             feed_path = block['url']
             feed = _download_gtfs(feed_path)
         else:
-            raise RuntimeError("GTFS block missing a 'file' or 'url'")
+            raise RuntimeError("'gtfs' block missing a 'file' or 'url'")
+
+        feed_stops_indexed = feed.get_stops().set_index('stop_id')
+        def validate_stop(stop_id: str):
+            if stop_id not in feed_stops_indexed.index:
+                raise RuntimeError(
+                    f"unknown stop ID '{stop_id}' for the gtfs feed {feed_path}")
 
         # Read attributes from trip blocks.
         trip_configs = defaultdict(lambda: _TripConfig(
@@ -155,10 +174,17 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                 config.delay_commands = group.get('delay', config.delay_commands)
                 config.dispose_commands = \
                     group.get('dispose', config.dispose_commands)
-                config.station_commands.update(
-                    _strkeys(group.get('station_commands', {})))
-                config.station_map.update(
-                    _strkeys(group.get('station_map', {})))
+
+                station_commands = _strkeys(group.get('station_commands', {}))
+                for s_name, _ in station_commands.items():
+                    validate_station(s_name)
+                config.station_commands.update(station_commands)
+
+                station_map = _strkeys(group.get('station_map', {}))
+                for stop_id, _ in station_map.items():
+                    validate_stop(stop_id)
+                config.station_map.update(station_map)
+
                 trip_groups[trip_id] = i
 
         # Group trips by trip block.
@@ -365,7 +391,7 @@ def _map_stations(route: msts.Route, feed: gk.feed.Feed) -> dict:
     def tokens(s: str) -> list: return re.split('[ \t:;,-]+', s.casefold())
 
     word_frequency = Counter(
-        chain(*(tokens(s_name) for s_name in route.stations().keys())))
+        chain(*(tokens(s_name) for s_name in route.station_names())))
     def similarity(a: str, b: str) -> float:
         ta = set(tokens(a))
         tb = set(tokens(b))

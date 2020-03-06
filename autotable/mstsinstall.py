@@ -101,6 +101,8 @@ class Route:
             res[platform.station].append(platform)
         return res
 
+    def station_names(self) -> iter: return self.stations().keys()
+
     @lru_cache(maxsize=1)
     def paths(self) -> list:
         route_paths = (child for child in _ichild(self.path, 'paths').iterdir()
