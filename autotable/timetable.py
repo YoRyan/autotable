@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import csv
 import datetime as dt
-from collections import Counter
+from collections import Counter, namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from itertools import chain, takewhile
@@ -32,11 +32,11 @@ class Trip:
 
     def __post_init__(self):
         first_stop = self.stops[0].arrival
-        # https://stackoverflow.com/a/656394
-        start_datetime = dt.datetime.combine(
-            dt.date(year=2000, month=1, day=1), first_stop)
-        self.start_time = \
-            (start_datetime + dt.timedelta(seconds=self.start_offset)).time()
+        self.start_time = first_stop + dt.timedelta(seconds=self.start_offset)
+
+
+Stop = namedtuple('TripStop', ['station', 'mapped_stop_id', 'mapped_stop_name',
+                               'arrival', 'departure'])
 
 
 class Timetable:

@@ -20,7 +20,7 @@ from more_itertools import first, ilen, take
 
 import autotable.mstsinstall as msts
 from autotable import __version__
-from autotable.timetable import Timetable, Trip
+from autotable.timetable import Stop, Timetable, Trip
 
 
 _GTFS_UNITS = 'm'
@@ -42,10 +42,6 @@ class _SubConsist:
             return f'{self.consist.id} $reverse'
         else:
             return self.consist.id
-
-
-TripStop = namedtuple('TripStop', ['station', 'mapped_stop_id', 'mapped_stop_name',
-                                   'arrival', 'departure'])
 
 
 @dataclass
@@ -217,16 +213,25 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
             start_dt = dt.datetime.combine(
                 date + dt.timedelta(days=-first_st.arrival_days_elapsed),
                 first_st.arrival)
-            start_dt += dt.timedelta(seconds=config.start_offset)
-            if not _is_trip_start(feed, trip_id, start_dt.date()):
+            if not _is_trip_start(
+                    feed, trip_id,
+                    (start_dt + dt.timedelta(seconds=config.start_offset)).date()):
                 return None
 
-            def make_stop(st: _StopTime) -> TripStop:
-                return TripStop(station=st.station,
-                                mapped_stop_id=st.mapped_stop_id,
-                                mapped_stop_name=stop_name(st.mapped_stop_id),
-                                arrival=st.arrival,
-                                departure=st.departure)
+            def make_stop(st: _StopTime) -> Stop:
+                start_date = start_dt.date()
+                # TODO: be timezone-aware!
+                arrival_dt = dt.datetime.combine(
+                    start_date + dt.timedelta(days=st.arrival_days_elapsed),
+                    st.arrival)
+                departure_dt = dt.datetime.combine(
+                    start_date + dt.timedelta(days=st.departure_days_elapsed),
+                    st.departure)
+                return Stop(station=st.station,
+                            mapped_stop_id=st.mapped_stop_id,
+                            mapped_stop_name=stop_name(st.mapped_stop_id),
+                            arrival=arrival_dt,
+                            departure=departure_dt)
 
             trip = feed_trips_indexed.loc[trip_id]
             route = \
