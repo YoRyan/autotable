@@ -1,0 +1,42 @@
+route: USA1A
+date: 2019-08-09
+gtfs:
+  - url: https://transitfeeds.com/p/septa/262/20190810/download
+    groups:
+      - note: $doo $acc=3 $dec=3
+        consist: 2000std
+
+        # Center City-bound
+      - selection:
+            shape_id: '^(201406|201007)$'
+        path: YoRyan_Nwrk-UnivCity
+      - selection:
+            shape_id: '^(203406|203007)$'
+        path: YoRyan_Wilm-UnivCity
+      - selection:
+            shape_id: '^(205406|205007)$'
+        path: YoRyan_MarcHk-UnivCity
+
+        # Delaware-bound
+      - selection:
+            trip_headsign: '^Marcus Hook$'
+        path: YoRyan_UnivCity-MarcHk
+      - selection:
+            trip_headsign: '^Claymont$'
+        path: YoRyan_UnivCity-Clay
+      - selection:
+            trip_headsign: '^Wilming?ton$'
+        path: YoRyan_UnivCity-Wilm
+      - selection:
+            trip_headsign: '^Newark$'
+        path: YoRyan_UnivCity-Nwrk
+
+    station_map:
+        90007: # Temple University
+        90406: University City
+
+station_commands:
+    "": $stoptime=30 # override the default 3-minute waiting time
+    Newark: $stoptime=60
+    Wilmington: $stoptime=120
+    Philadelphia: $stoptime=180

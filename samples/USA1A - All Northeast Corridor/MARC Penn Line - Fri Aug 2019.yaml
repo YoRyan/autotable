@@ -1,0 +1,59 @@
+route: USA1A
+date: 2019-08-09
+gtfs:
+  - url: http://transitfeeds.com/p/mta-maryland/247/20190803/download
+    groups:
+      - note: $dec=2
+        consist: class 50, 8 carriages
+
+        # Perryville-bound
+      - selection:
+            trip_short_name: '^Train 4\d\d$'
+            direction_id: '^1$'
+        path: YoRyan_Wash-Balt
+      - selection:
+            trip_short_name: '^Train 5\d\d$'
+            direction_id: '^1$'
+        path: YoRyan_Wash-Perr
+        consist: acelahhp-8stndrd
+      - selection:
+            trip_short_name: '^Train 554$'
+        path: YoRyan_Balt-Perr
+      - selection:
+            trip_short_name: '^Train 6\d\d$'
+            direction_id: '^1$'
+        path: YoRyan_Wash-Mart
+
+        # Washington-bound
+      - selection:
+            trip_short_name: '^Train 4\d\d$'
+            direction_id: '^0$'
+        path: YoRyan_Balt-Wash
+      - selection:
+            trip_short_name: '^Train 5\d\d$'
+            direction_id: '^0$'
+        path: YoRyan_Perr-Wash
+        consist: acelahhp-8stndrd
+      - selection:
+            trip_short_name: '^Train 579$'
+        path: YoRyan_Perr-Balt
+      - selection:
+            trip_short_name: '^Train 6\d\d$'
+            direction_id: '^0$'
+        path: YoRyan_Mart-Wash
+      - selection:
+            trip_short_name: '^Train 613$'
+            direction_id: '^0$'
+        path: YoRyan_Mart-Balt
+
+    station_map:
+        11988: New Carrollton Amtrak
+        11989: New Carrollton Amtrak
+
+station_commands:
+    "": $stoptime=30 # override the default 3-minute waiting time
+    Union Station: $stoptime=120
+    New Carrollton Amtrak: $stoptime=60
+    BWI Airport: $stoptime=60
+    Baltimore Penn Station: $stoptime=120
+    Aberdeen: $stoptime=60

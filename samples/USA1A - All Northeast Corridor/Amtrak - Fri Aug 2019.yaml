@@ -1,0 +1,89 @@
+route: USA1A
+date: 2019-08-09
+gtfs:
+  - url: https://transitland-gtfs.s3.amazonaws.com/datastore-uploads/feed_version/d2483076c78b6d8b12cf67a1fae7c4f5fa5aaad4.zip
+    groups:
+      - note: $dec=2
+
+        ##
+        ## Washington-bound
+        ##
+
+        # Acela Express
+      - selection:
+            route_id: '^36919$'
+            direction_id: '^1$'
+        path: YoRyan_Phil-Wash_Acela
+        consist: acela
+
+        # Northeast Regional
+      - selection:
+            route_id: '^88$'
+            direction_id: '^1$'
+        path: YoRyan_Phil-Wash_Regional
+        consist: acelahhp-8stndrd
+
+        # Vermonter
+      - selection:
+            route_id: '^90$'
+            direction_id: '^1$'
+        path: YoRyan_Phil-Wash_Regional
+        consist: acelahhp-8stndrd
+
+        # Carolinian
+      - selection:
+            route_id: '^85$'
+            direction_id: '^1$'
+        path: YoRyan_Phil-Wash_Regional
+        consist: acelahhp-8stndrd
+
+        # Palmetto
+      - selection:
+            route_id: '^69$'
+            direction_id: '^1$'
+        path: YoRyan_Phil-Wash_Regional
+        consist: acelahhp-8stndrd
+
+        ##
+        ## Philadelphia-bound
+        ##
+
+        # Acela Express
+      - selection:
+            route_id: '^36919$'
+            direction_id: '^0$'
+        path: YoRyan_Wash-Phil_Acela
+        consist: acela
+
+        # Northeast Regional
+      - selection:
+            route_id: '^88$'
+            direction_id: '^0$'
+        path: YoRyan_Wash-Phil_Regional
+        consist: acelahhp-8stndrd
+
+        # Vermonter
+      - selection:
+            route_id: '^90$'
+            direction_id: '^0$'
+        path: YoRyan_Wash-Phil_Regional
+        consist: acelahhp-8stndrd
+
+        # Carolinian
+      - selection:
+            route_id: '^85$'
+            direction_id: '^0$'
+        path: YoRyan_Wash-Phil_Regional
+        consist: acelahhp-8stndrd
+
+        # Palmetto
+      - selection:
+            route_id: '^69$'
+            direction_id: '^0$'
+        path: YoRyan_Wash-Phil_Regional
+        consist: acelahhp-8stndrd
+
+station_commands:
+    "": $stoptime=60 # override the default 3-minute waiting time
+    Union Station: $stoptime=120
+    Philadelphia: $stoptime=120
