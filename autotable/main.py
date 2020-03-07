@@ -3,6 +3,7 @@ import datetime as dt
 import re
 from argparse import ArgumentParser
 from collections import Counter, defaultdict, namedtuple
+from copy import copy
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import chain, tee
@@ -21,8 +22,8 @@ from more_itertools import first, ilen, take
 from timezonefinder import TimezoneFinder
 
 import autotable.mstsinstall as msts
+import autotable.timetable as tt
 from autotable import __version__
-from autotable.timetable import Stop, Timetable, Trip
 
 
 _GTFS_UNITS = 'm'
@@ -31,42 +32,9 @@ _MIN_STOPS = 1
 _TzF = TimezoneFinder()
 
 
-@dataclass
-class _SubConsist:
-    consist: msts.Consist
-    reverse: False
-
-    def __str__(self):
-        if re.search(r'[\+\$]', self.consist.id):
-            if self.reverse:
-                return f'<{self.consist.id}>$reverse'
-            else:
-                return f'<{self.consist.id}>'
-        elif self.reverse:
-            return f'{self.consist.id} $reverse'
-        else:
-            return self.consist.id
-
-
-@dataclass
-class _TripConfig:
-    path: msts.Route.Path
-    consist: list
-    start_offset: int
-    start_commands: str
-    note: str
-    speed_mps: str
-    speed_kph: str
-    speed_mph: str
-    delay_commands: str
-    dispose_commands: str
-    station_commands: dict
-    station_map: dict
-
-
-_StopTime = namedtuple(
-    '_StopTime', ['station', 'mapped_stop_id', 'arrival_days_elapsed', 'arrival',
-                  'departure_days_elapsed', 'departure'])
+_StopTime = namedtuple('_StopTime', ['station', 'mapped_stop_id',
+                                     'arrival_days_elapsed', 'arrival',
+                                     'departure_days_elapsed', 'departure'])
 
 
 def main():
@@ -100,9 +68,10 @@ def main():
         timetable.write_csv(fp)
 
 
-def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
+def load_config(fp, install: msts.MSTSInstall, name: str) -> tt.Timetable:
     yd = yaml.safe_load(fp)
 
+    # 'route'
     route_id = yd.get('route', None)
     if not isinstance(route_id, str):
         raise RuntimeError("'route' missing or not a string")
@@ -115,6 +84,7 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
         if station not in route_stations:
             raise RuntimeError(f"{route.name} has no such station '{station}'")
 
+    # 'date'
     date = yd.get('date', None)
     if not isinstance(date, dt.date):
         raise RuntimeError("'date' missing or not readable by PyYAML")
@@ -124,19 +94,30 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
     # Resolve daylight savings and other ambiguities.
     timezone = timezone.localize(dt.datetime.combine(date, dt.time(6, 1))).tzinfo
 
-    gtfs = yd.get('gtfs', None)
-    if not isinstance(gtfs, list):
-        raise RuntimeError("'gtfs' not present or not a list of dictionaries")
-    tt = Timetable(route, date, name, tzinfo=timezone)
-    for block in gtfs:
-        if not isinstance(block, dict):
-            raise RuntimeError("'gtfs' block wasn't a dictionary")
+    # 'speed_unit'
+    speed_unit_str = yd.get('speed_unit', None)
+    if speed_unit_str == 'm/s' or speed_unit_str is None:
+        speed_unit = tt.SpeedUnit.MS
+    elif speed_unit_str == 'km/h' or speed_unit_str == 'kph':
+        speed_unit = tt.SpeedUnit.KPH
+    elif speed_unit_str == 'mi/h' or speed_unit_str == 'mph':
+        speed_unit = tt.SpeedUnit.MPH
+    else:
+        raise ValueError(f"unknown unit of speed '{speed_unit_str}'")
 
-        if block.get('file', ''):
-            feed_path = block['file']
+    # 'station_commands'
+    station_commands = yd.get('station_commands', {})
+    for s_name, _ in station_commands.items():
+        if s_name != '':
+            validate_station(s_name)
+
+    # 'gtfs'
+    def load_gtfs(yd) -> iter:
+        if 'file' in yd:
+            feed_path = yd['file']
             feed = _read_gtfs(feed_path)
-        elif block.get('url', ''):
-            feed_path = block['url']
+        elif 'url' in yd:
+            feed_path = yd['url']
             feed = _download_gtfs(feed_path)
         else:
             raise RuntimeError("'gtfs' block missing a 'file' or 'url'")
@@ -147,98 +128,90 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                 raise RuntimeError(
                     f"unknown stop ID '{stop_id}' for the gtfs feed {feed_path}")
 
+        def stop_name(stop_id: str) -> str:
+            return feed_stops_indexed.at[stop_id, 'stop_name']
+
         # Read attributes from trip blocks.
-        trip_configs = defaultdict(lambda: _TripConfig(
-            path='',
-            consist=[],
+        prelim_trips = defaultdict(lambda: tt.Trip(
+            name=None,
+            stops=None,
+            path=None,
+            consist=None,
             start_offset=-120,
             start_commands='',
-            note='',
-            speed_mps='',
-            speed_kph='',
-            speed_mph='',
+            note_commands='',
+            speed_commands='',
             delay_commands='',
-            dispose_commands='',
             station_commands={},
-            station_map={}))
+            dispose_commands=''))
+        trip_maps = defaultdict(lambda: {})
         trip_groups = {}
-        for i, group in enumerate(block['groups']):
+        for i, group in enumerate(yd.get('groups', [])):
             rows = _filter_trips(feed.trips, group.get('selection', {}))
             for _, trip_id in rows['trip_id'].iteritems():
-                config = trip_configs[trip_id]
+                trip = prelim_trips[trip_id]
+
                 if 'path' in group:
-                    config.path = _parse_path(route, group['path'])
+                    trip.path = _parse_path(route, group['path'])
                 if 'consist' in group:
-                    config.consist = _parse_consist(install, group['consist'])
-                config.start_offset = group.get('start_time', config.start_offset)
-                config.start_commands = group.get('start', config.start_commands)
-                config.note = group.get('note', config.note)
-                config.speed_mps = group.get('speed_mps', config.speed_mps)
-                config.speed_kph = group.get('speed_kph', config.speed_kph)
-                config.speed_mph = group.get('speed_mph', config.speed_mph)
-                config.delay_commands = group.get('delay', config.delay_commands)
-                config.dispose_commands = \
-                    group.get('dispose', config.dispose_commands)
+                    trip.consist = _parse_consist(install, group['consist'])
+
+                trip.start_offset = group.get('start_time', trip.start_offset)
+                trip.start_commands = group.get('start', trip.start_commands)
+                trip.note_commands = group.get('note', trip.note_commands)
+                trip.speed_commands = group.get('speed', trip.speed_commands)
+                trip.delay_commands = group.get('delay', trip.delay_commands)
+                trip.dispose_commands = group.get('dispose', trip.dispose_commands)
 
                 station_commands = _strkeys(group.get('station_commands', {}))
                 for s_name, _ in station_commands.items():
                     validate_station(s_name)
-                config.station_commands.update(station_commands)
+                trip.station_commands.update(station_commands)
 
                 station_map = _strkeys(group.get('station_map', {}))
                 for stop_id, _ in station_map.items():
                     validate_stop(stop_id)
-                config.station_map.update(station_map)
+                trip_maps[trip_id].update(station_map)
 
                 trip_groups[trip_id] = i
 
-        # Group trips by trip block.
-        grouped_trips = defaultdict(lambda: set())
-        for trip_id, config in trip_configs.items():
-            if config.path and config.consist:
-                grouped_trips[trip_groups[trip_id]].add(trip_id)
-
         # Map GTFS stops to station names.
         auto_map = _map_stations(route, feed)
-        gtfs_map = _strkeys(block.get('station_map', {}))
+        gtfs_map = _strkeys(yd.get('station_map', {}))
         def map_station(trip_id: str, stop_id: str) -> str:
-            trip_map = trip_configs[trip_id]
-            return trip_map.station_map.get(
+            return trip_maps[trip_id].get(
                 stop_id, gtfs_map.get(stop_id, auto_map.get(stop_id, None)))
 
         # Add all Trips to Timetable.
         feed_trips_indexed = feed.get_trips().set_index('trip_id')
-        def make_trip(trip_id: str) -> Trip:
-            def stop_name(stop_id: str) -> str:
-                stops_indexed = feed.stops.set_index('stop_id')
-                return stops_indexed.at[stop_id, 'stop_name']
+        def finalize_trip(trip: tt.Trip, trip_id: str) -> bool:
+            if not trip.path or not trip.consist:
+                return None
 
             st1, st2, st3 = tee(_stop_times(feed, trip_id, map_station), 3)
             if ilen(take(_MIN_STOPS, st1)) < _MIN_STOPS:
                 return None
 
-            config = trip_configs[trip_id]
             first_st = first(st2)
             start_dt = dt.datetime.combine(
                 date + dt.timedelta(days=-first_st.arrival_days_elapsed),
                 first_st.arrival)
             if not _is_trip_start(
                     feed, trip_id,
-                    (start_dt + dt.timedelta(seconds=config.start_offset)).date()):
+                    (start_dt + dt.timedelta(seconds=trip.start_offset)).date()):
                 return None
 
-            trip = feed_trips_indexed.loc[trip_id]
+            trip_row = feed_trips_indexed.loc[trip_id]
             route = feed.routes[feed.routes['route_id']
-                                == trip['route_id']].squeeze()
+                                == trip_row['route_id']].squeeze()
+
             agency = feed.agency[feed.agency['agency_id']
                                  == route['agency_id']].squeeze()
-
             # Assume route and trip timezone are identical if the GTFS feed
             # doesn't specify one.
-            trip_timezone = \
-                pytz.timezone(agency['agency_timezone']
-                              if agency['agency_timezone'] else timezone)
-            def make_stop(st: _StopTime) -> Stop:
+            trip_timezone = (pytz.timezone(agency['agency_timezone'])
+                             if agency['agency_timezone'] else timezone)
+            def make_stop(st: _StopTime) -> tt.Stop:
                 start_date = start_dt.date()
                 arrival_dt = trip_timezone.localize(dt.datetime.combine(
                     start_date + dt.timedelta(days=st.arrival_days_elapsed),
@@ -246,43 +219,44 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                 departure_dt = trip_timezone.localize(dt.datetime.combine(
                     start_date + dt.timedelta(days=st.departure_days_elapsed),
                     st.departure))
-                return Stop(station=st.station,
-                            mapped_stop_id=st.mapped_stop_id,
-                            mapped_stop_name=stop_name(st.mapped_stop_id),
-                            arrival=arrival_dt,
-                            departure=departure_dt)
+                return tt.Stop(
+                    station=st.station,
+                    comment=f'{st.mapped_stop_id} {stop_name(st.mapped_stop_id)}',
+                    arrival=arrival_dt,
+                    departure=departure_dt)
 
-            route_name = (route.get('route_long_name', '')
-                          or route.get('route_short_name', ''))
-            return Trip(
-                name=trip.get('trip_short_name', '') or trip_id,
-                headsign=trip.get('trip_headsign', ''),
-                route_name=route_name,
-                block=trip.get('block_id', ''),
-                stops=[make_stop(st) for st in st3],
-                path=config.path,
-                consist=config.consist,
-                start_offset=config.start_offset,
-                start_commands=config.start_commands,
-                note=config.note,
-                speed_mps=config.speed_mps,
-                speed_kph=config.speed_kph,
-                speed_mph=config.speed_mph,
-                delay_commands=config.delay_commands,
-                station_commands=config.station_commands,
-                dispose_commands=config.dispose_commands)
-        for i in range(len(block['groups'])):
+            new_trip = copy(trip)
+            new_trip.name = _name_trip(feed, trip_row)
+            new_trip.stops = [make_stop(st) for st in st3]
+            return new_trip
+
+        grouped_trips = defaultdict(lambda: set())
+        for trip_id in prelim_trips.keys():
+            grouped_trips[trip_groups[trip_id]].add(trip_id)
+        for i, _ in enumerate(yd.get('groups', [])):
             trips = list(filter(lambda trip: trip is not None,
-                                (make_trip(trip_id) for trip_id in grouped_trips[i])))
-            trips.sort(key=lambda trip: trip.start_time)
-            tt.trips += trips
+                                (finalize_trip(prelim_trips[trip_id], trip_id)
+                                 for trip_id in grouped_trips[i])))
+            trips.sort(key=tt.Trip.start_time)
+            for trip in trips:
+                yield trip
 
-    top_station_commands = yd.get('station_commands', {})
-    for s_name, _ in top_station_commands.items():
-        if s_name != '':
-            validate_station(s_name)
-    tt.station_commands = top_station_commands
-    return tt
+    gtfs = yd.get('gtfs', None)
+    if not isinstance(gtfs, list):
+        raise RuntimeError("'gtfs' not present or not a list of dictionaries")
+    trips = []
+    for block in gtfs:
+        if not isinstance(block, dict):
+            raise RuntimeError("'gtfs' block wasn't a dictionary")
+        trips.extend(load_gtfs(block))
+
+    return tt.Timetable(name=name,
+                        route=route,
+                        date=date,
+                        tz=timezone,
+                        trips=trips,
+                        station_commands=station_commands,
+                        speed_unit=speed_unit)
 
 
 @lru_cache(maxsize=8)
@@ -321,7 +295,7 @@ def _parse_consist(install: msts.MSTSInstall, yd) -> list:
         con_id = (split[0] if reverse else subconsist).casefold()
         if con_id not in consists:
             raise RuntimeError(f"unknown consist '{con_id}'")
-        return _SubConsist(consist=consists[con_id], reverse=reverse)
+        return tt.ConsistComponent(consist=consists[con_id], reverse=reverse)
 
     return [parse(item) for item in yd]
 
@@ -450,6 +424,20 @@ def _map_stations(route: msts.Route, feed: gk.feed.Feed) -> dict:
     stops = stops.set_index(stops['stop_id'].astype(str))
     stops['_mapped_station'] = stops.apply(map_station, axis=1)
     return stops.to_dict()['_mapped_station']
+
+
+def _name_trip(feed: gk.feed.Feed, trip: pd.Series):
+    route = feed.routes[feed.routes['route_id'] == trip['route_id']].squeeze()
+    route_name = \
+        route.get('route_long_name', '') or route.get('route_short_name', '')
+    name = trip.get('trip_short_name', '') or trip_id
+    headsign = trip.get('trip_headsign', '')
+    if route_name:
+        return f'{route_name} {name}'
+    elif headsign:
+        return f'{name} {headsign}'
+    else:
+        return name
 
 
 def _strkeys(d: dict) -> dict: return {str(k): v for k, v in d.items()}

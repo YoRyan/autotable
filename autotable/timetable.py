@@ -1,74 +1,90 @@
 # -*- coding: utf-8 -*-
 import csv
 import datetime as dt
+import re
 from collections import Counter, namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from enum import Enum
 from itertools import chain, takewhile
 
 from more_itertools import ilen, quantify, pairwise
 
-from autotable.mstsinstall import Route
+from autotable.mstsinstall import Consist, Route
 
 
 @dataclass
 class Trip:
     name: str
-    headsign: str
-    route_name: str
-    block: str
     stops: list
     path: Route.Path
     consist: list
     start_offset: int
     start_commands: str
-    note: str
-    speed_mps: str
-    speed_kph: str
-    speed_mph: str
+    note_commands: str
+    speed_commands: str
     delay_commands: str
     station_commands: dict
     dispose_commands: str
 
-    def __post_init__(self):
+    def start_time(self):
+        if len(self.stops) < 1:
+            return None
+
         first_stop = self.stops[0].arrival
-        self.start_time = first_stop + dt.timedelta(seconds=self.start_offset)
+        return first_stop + dt.timedelta(seconds=self.start_offset)
 
 
-Stop = namedtuple('TripStop', ['station', 'mapped_stop_id', 'mapped_stop_name',
-                               'arrival', 'departure'])
+Stop = namedtuple('Stop', ['station', 'comment', 'arrival', 'departure'])
 
 
+@dataclass
+class ConsistComponent:
+    consist: Consist
+    reverse: False
+
+    def __str__(self):
+        if re.search(r'[\+\$]', self.consist.id):
+            if self.reverse:
+                return f'<{self.consist.id}>$reverse'
+            else:
+                return f'<{self.consist.id}>'
+        elif self.reverse:
+            return f'{self.consist.id} $reverse'
+        else:
+            return self.consist.id
+
+
+class SpeedUnit(Enum):
+    MS = 1
+    KPH = 2
+    MPH = 3
+
+
+@dataclass
 class Timetable:
-
-    def __init__(self, route: Route, date: dt.date, name: str,
-                 tzinfo=dt.timezone.utc):
-        self.route = route
-        self.date = date
-        self.tz = tzinfo
-        self.name = name
-        self.trips = []
-        self.station_commands = {}
+    name: str
+    route: Route
+    date: dt.date
+    tz: dt.timezone
+    trips: list
+    station_commands: {}
+    speed_unit: SpeedUnit
 
     def write_csv(self, fp):
         # csv settings per the May 2017 timetable document
         # http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/
         writer = csv.writer(fp, delimiter='\t', quoting=csv.QUOTE_NONE)
 
+        def strftime(dt: dt.datetime) -> str:
+            return dt.astimezone(self.tz).strftime('%H:%M')
+
         ordered_stations = _order_stations(
             self.trips, iter(self.route.stations().keys()))
         ordered_trips = self.trips
 
-        def trip_name(trip: Trip) -> str:
-            if trip.route_name:
-                return f'{trip.route_name} {trip.name}'
-            elif trip.headsign:
-                return f'{trip.name} {trip.headsign}'
-            else:
-                return trip.name
         writer.writerow(chain(iter(('', '', '#comment')),
-                              (trip_name(trip) for trip in ordered_trips)))
-
+                              (trip.name for trip in ordered_trips)))
         writer.writerow(iter(('#comment', '', self.name)))
         writer.writerow(chain(iter(('#path', '', '')),
                               (trip.path.id for trip in ordered_trips)))
@@ -78,25 +94,25 @@ class Timetable:
         writer.writerow(chain(iter(('#consist', '', '')),
                               (consist_col(trip) for trip in ordered_trips)))
 
-        def strftime(dt: dt.datetime) -> str:
-            return dt.astimezone(self.tz).strftime('%H:%M')
-
         def start_col(trip: Trip) -> str:
             if trip.start_commands:
-                return f'{strftime(trip.start_time)} {trip.start_commands}'
+                return f'{strftime(trip.start_time())} {trip.start_commands}'
             else:
-                return strftime(trip.start_time)
+                return strftime(trip.start_time())
         writer.writerow(chain(iter(('#start', '', '')),
                               (start_col(trip) for trip in ordered_trips)))
 
         writer.writerow(chain(iter(('#note', '', '')),
-                              (trip.note for trip in ordered_trips)))
-        writer.writerow(chain(iter(('#speed', '', '')),
-                              (trip.speed_mps for trip in ordered_trips)))
-        writer.writerow(chain(iter(('#speedkph', '', '')),
-                              (trip.speed_kph for trip in ordered_trips)))
-        writer.writerow(chain(iter(('#speedmph', '', '')),
-                              (trip.speed_mph for trip in ordered_trips)))
+                              (trip.note_commands for trip in ordered_trips)))
+
+        speed_commands = (trip.speed_commands for trip in ordered_trips)
+        if self.speed_unit == SpeedUnit.MS:
+            writer.writerow(chain(iter(('#speed', '', '')), speed_commands))
+        elif self.speed_unit == SpeedUnit.KPH:
+            writer.writerow(chain(iter(('#speedkph', '', '')), speed_commands))
+        elif self.speed_unit == SpeedUnit.MPH:
+            writer.writerow(chain(iter(('#speedmph', '', '')), speed_commands))
+
         writer.writerow(chain(iter(('#restartdelay', '', '')),
                               (trip.delay_commands for trip in ordered_trips)))
 
@@ -120,18 +136,12 @@ class Timetable:
 
                 commands = trip.station_commands.get(s_name,
                     trip.station_commands.get('', ''))
-                if commands:
-                    yield f'{time} {commands}'
-                else:
-                    yield time
+                yield f'{time} {commands}' if commands else time
 
-        def station_mappings(s_name: str):
-            for i, trip in enumerate(ordered_trips):
+        def station_comments(s_name: str):
+            for i, _ in enumerate(ordered_trips):
                 stop = stops_index.get((i, s_name), None)
-                if stop is None:
-                    yield ''
-                else:
-                    yield f'{stop.mapped_stop_id} - {stop.mapped_stop_name}'
+                yield stop.comment if stop is not None else ''
 
         writer.writerow([])
         for s_name in ordered_stations:
@@ -140,7 +150,7 @@ class Timetable:
             writer.writerow(
                 chain(iter((s_name, commands, '')), station_stops(s_name)))
             writer.writerow(
-                chain(iter(('#comment', '', '',)), station_mappings(s_name)))
+                chain(iter(('#comment', '', '',)), station_comments(s_name)))
         writer.writerow([])
 
         writer.writerow(chain(iter(('#dispose', '', '')),
