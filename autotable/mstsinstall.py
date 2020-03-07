@@ -57,19 +57,7 @@ class Route:
 
             rdata = data['TrItemRData'].values()
             self.elevation_m = rdata[1]
-
-            # Conversion is abridged from Open Rails
-            # (Orts.Common.WorldLatLon.ConvertWTC)
-            radius_m = 6370997
-            tile_m = 2048
-            ul_y = 8673000
-            ul_x = -20015000
-            ns_offset = 16385
-            ew_offset = -ns_offset
-            y = ul_y - (ns_offset - rdata[4] - 1)*tile_m + rdata[2]
-            x = ul_x + (rdata[3] - ew_offset - 1)*tile_m + rdata[0]
-            goode = pp.CRS.from_proj4(f'+proj=igh +R={radius_m}')
-            self.latlon = pp.transform(goode, pp.Proj('epsg:4326'), x, y)
+            self.latlon = _latlon(*(rdata[i] for i in (3, 4, 0, 2)))
 
     def __init__(self, path: Path, encoding=ENCODING):
         df = next(child for child in path.iterdir()
@@ -82,6 +70,7 @@ class Route:
         self.id = desc['RouteID']
         self.name = desc['Name']
         self.description = desc['Description']
+        self.latlon = _latlon(*(desc['RouteStart'][i].value for i in (0, 1, 2, 3)))
         self._filename = desc['FileName']
         self._encoding = encoding
 
@@ -131,3 +120,17 @@ class Consist:
 def _ichild(path, name): return next(child for child in path.iterdir()
                                      if child.name.casefold() == name.casefold())
 
+
+def _latlon(tile_x: int, tile_z: int, ew: float, ns: float) -> (float, float):
+    # Conversion is abridged from Open Rails (Orts.Common.WorldLatLon.ConvertWTC)
+    # https://github.com/openrails/openrails/blob/master/Source/Orts.Simulation/Common/WorldLatLon.cs
+    radius_m = 6370997
+    tile_m = 2048
+    ul_y = 8673000
+    ul_x = -20015000
+    ns_offset = 16385
+    ew_offset = -ns_offset
+    y = ul_y - (ns_offset - tile_z - 1)*tile_m + ns
+    x = ul_x + (tile_x - ew_offset - 1)*tile_m + ew
+    goode = pp.CRS.from_proj4(f'+proj=igh +R={radius_m}')
+    return pp.transform(goode, pp.Proj('epsg:4326'), x, y)

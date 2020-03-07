@@ -30,6 +30,7 @@ setuptools.setup(
         'pyproj',
         'pyyaml',
         'requests',
+        'timezonefinder',
     ],
     entry_points={
         'console_scripts': ['autotable=autotable.main:main'],

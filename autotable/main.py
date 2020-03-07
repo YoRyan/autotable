@@ -13,10 +13,12 @@ from tempfile import NamedTemporaryFile
 import gtfs_kit as gk
 import pandas as pd
 import pyproj as pp
+import pytz
 import requests
 import yaml
 from gtfs_kit.helpers import weekday_to_str
 from more_itertools import first, ilen, take
+from timezonefinder import TimezoneFinder
 
 import autotable.mstsinstall as msts
 from autotable import __version__
@@ -25,6 +27,8 @@ from autotable.timetable import Stop, Timetable, Trip
 
 _GTFS_UNITS = 'm'
 _MIN_STOPS = 1
+
+_TzF = TimezoneFinder()
 
 
 @dataclass
@@ -114,11 +118,16 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
     date = yd.get('date', None)
     if not isinstance(date, dt.date):
         raise RuntimeError("'date' missing or not readable by PyYAML")
+    timezone = pytz.timezone(yd.get(
+        'timezone',
+        _TzF.closest_timezone_at(lat=route.latlon[0], lng=route.latlon[1])))
+    # Resolve daylight savings and other ambiguities.
+    timezone = timezone.localize(dt.datetime.combine(date, dt.time(6, 1))).tzinfo
 
     gtfs = yd.get('gtfs', None)
     if not isinstance(gtfs, list):
         raise RuntimeError("'gtfs' not present or not a list of dictionaries")
-    tt = Timetable(route, date, name)
+    tt = Timetable(route, date, name, tzinfo=timezone)
     for block in gtfs:
         if not isinstance(block, dict):
             raise RuntimeError("'gtfs' block wasn't a dictionary")
@@ -218,24 +227,31 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> Timetable:
                     (start_dt + dt.timedelta(seconds=config.start_offset)).date()):
                 return None
 
+            trip = feed_trips_indexed.loc[trip_id]
+            route = feed.routes[feed.routes['route_id']
+                                == trip['route_id']].squeeze()
+            agency = feed.agency[feed.agency['agency_id']
+                                 == route['agency_id']].squeeze()
+
+            # Assume route and trip timezone are identical if the GTFS feed
+            # doesn't specify one.
+            trip_timezone = \
+                pytz.timezone(agency['agency_timezone']
+                              if agency['agency_timezone'] else timezone)
             def make_stop(st: _StopTime) -> Stop:
                 start_date = start_dt.date()
-                # TODO: be timezone-aware!
-                arrival_dt = dt.datetime.combine(
+                arrival_dt = trip_timezone.localize(dt.datetime.combine(
                     start_date + dt.timedelta(days=st.arrival_days_elapsed),
-                    st.arrival)
-                departure_dt = dt.datetime.combine(
+                    st.arrival))
+                departure_dt = trip_timezone.localize(dt.datetime.combine(
                     start_date + dt.timedelta(days=st.departure_days_elapsed),
-                    st.departure)
+                    st.departure))
                 return Stop(station=st.station,
                             mapped_stop_id=st.mapped_stop_id,
                             mapped_stop_name=stop_name(st.mapped_stop_id),
                             arrival=arrival_dt,
                             departure=departure_dt)
 
-            trip = feed_trips_indexed.loc[trip_id]
-            route = \
-                feed.routes[feed.routes['route_id'] == trip['route_id']].squeeze()
             route_name = (route.get('route_long_name', '')
                           or route.get('route_short_name', ''))
             return Trip(

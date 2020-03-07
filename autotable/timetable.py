@@ -41,9 +41,11 @@ Stop = namedtuple('TripStop', ['station', 'mapped_stop_id', 'mapped_stop_name',
 
 class Timetable:
 
-    def __init__(self, route: Route, date: dt.date, name: str):
+    def __init__(self, route: Route, date: dt.date, name: str,
+                 tzinfo=dt.timezone.utc):
         self.route = route
         self.date = date
+        self.tz = tzinfo
         self.name = name
         self.trips = []
         self.station_commands = {}
@@ -76,7 +78,8 @@ class Timetable:
         writer.writerow(chain(iter(('#consist', '', '')),
                               (consist_col(trip) for trip in ordered_trips)))
 
-        def strftime(t: dt.time) -> str: return t.strftime('%H:%M')
+        def strftime(dt: dt.datetime) -> str:
+            return dt.astimezone(self.tz).strftime('%H:%M')
 
         def start_col(trip: Trip) -> str:
             if trip.start_commands:
