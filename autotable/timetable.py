@@ -6,7 +6,7 @@ from collections import Counter, namedtuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from enum import Enum
-from itertools import chain, takewhile
+from itertools import takewhile
 
 from more_itertools import ilen, quantify, pairwise
 
@@ -75,6 +75,7 @@ class Timetable:
         # csv settings per the May 2017 timetable document
         # http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/
         writer = csv.writer(fp, delimiter='\t', quoting=csv.QUOTE_NONE)
+        def writerow(*args): writer.writerow(args)
 
         def strftime(dt: dt.datetime) -> str:
             return dt.astimezone(self.tz).strftime('%H:%M')
@@ -83,38 +84,33 @@ class Timetable:
             self.trips, iter(self.route.stations().keys()))
         ordered_trips = self.trips
 
-        writer.writerow(chain(iter(('', '', '#comment')),
-                              (trip.name for trip in ordered_trips)))
-        writer.writerow(iter(('#comment', '', self.name)))
-        writer.writerow(chain(iter(('#path', '', '')),
-                              (trip.path.id for trip in ordered_trips)))
+        writerow('', '', '#comment', *(trip.name for trip in ordered_trips))
+        writerow('#comment', '', self.name)
+        writerow('#path', '', '', *(trip.path.id for trip in ordered_trips))
 
         def consist_col(trip: Trip) -> str:
             return '+'.join(str(subconsist) for subconsist in trip.consist)
-        writer.writerow(chain(iter(('#consist', '', '')),
-                              (consist_col(trip) for trip in ordered_trips)))
+        writerow('#consist', '', '', *(consist_col(trip) for trip in ordered_trips))
 
         def start_col(trip: Trip) -> str:
             if trip.start_commands:
                 return f'{strftime(trip.start_time())} {trip.start_commands}'
             else:
                 return strftime(trip.start_time())
-        writer.writerow(chain(iter(('#start', '', '')),
-                              (start_col(trip) for trip in ordered_trips)))
+        writerow('#start', '', '', *(start_col(trip) for trip in ordered_trips))
 
-        writer.writerow(chain(iter(('#note', '', '')),
-                              (trip.note_commands for trip in ordered_trips)))
+        writerow('#note', '', '', *(trip.note_commands for trip in ordered_trips))
 
         speed_commands = (trip.speed_commands for trip in ordered_trips)
         if self.speed_unit == SpeedUnit.MS:
-            writer.writerow(chain(iter(('#speed', '', '')), speed_commands))
+            writerow('#speed', '', '', *speed_commands)
         elif self.speed_unit == SpeedUnit.KPH:
-            writer.writerow(chain(iter(('#speedkph', '', '')), speed_commands))
+            writerow('#speedkph', '', '', *speed_commands)
         elif self.speed_unit == SpeedUnit.MPH:
-            writer.writerow(chain(iter(('#speedmph', '', '')), speed_commands))
+            writerow('#speedmph', '', '', *speed_commands)
 
-        writer.writerow(chain(iter(('#restartdelay', '', '')),
-                              (trip.delay_commands for trip in ordered_trips)))
+        writerow('#restartdelay', '', '',
+                 *(trip.delay_commands for trip in ordered_trips))
 
         stops_index = {}
         for i, trip in enumerate(ordered_trips):
@@ -143,18 +139,16 @@ class Timetable:
                 stop = stops_index.get((i, s_name), None)
                 yield stop.comment if stop is not None else ''
 
-        writer.writerow([])
+        writerow()
         for s_name in ordered_stations:
             commands = self.station_commands.get(
                 s_name, self.station_commands.get('', ''))
-            writer.writerow(
-                chain(iter((s_name, commands, '')), station_stops(s_name)))
-            writer.writerow(
-                chain(iter(('#comment', '', '',)), station_comments(s_name)))
-        writer.writerow([])
+            writerow(s_name, commands, '', *station_stops(s_name))
+            writerow('#comment', '', '', *station_comments(s_name))
+        writerow()
 
-        writer.writerow(chain(iter(('#dispose', '', '')),
-                              (trip.dispose_commands for trip in ordered_trips)))
+        writerow('#dispose', '', '',
+                 *(trip.dispose_commands for trip in ordered_trips))
 
 
 def _order_stations(trips: list, stations: iter) -> list:
