@@ -1,9 +1,11 @@
 route: EUROPE1
 date: 2019-12-02
+speed_unit: mph
 gtfs:
   - url: https://transitland-gtfs.s3.amazonaws.com/datastore-uploads/feed_version/d9fdfe685f3f476dd45d121098f0d921b26677bc.zip
     groups:
       - note: $dec=2
+        speed: $max=60
         consist: Class 50, 8 carriages
 
         # Towards Settle
