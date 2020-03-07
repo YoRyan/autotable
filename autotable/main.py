@@ -226,7 +226,7 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> tt.Timetable:
                     departure=departure_dt)
 
             new_trip = copy(trip)
-            new_trip.name = _name_trip(feed, trip_row)
+            new_trip.name = _name_trip(feed, trip_id)
             new_trip.stops = [make_stop(st) for st in st3]
             return new_trip
 
@@ -372,7 +372,7 @@ def _stop_times(feed: gk.feed.Feed, trip_id: str, map_station) -> iter:
                          departure_days_elapsed=departure_days,
                          departure=departure)
 
-    def parse_time(s):
+    def parse_time(s) -> tuple:
         match = re.search(r'(\d?\d)\s*:\s*([012345]?\d)\s*:\s*([012345]?\d)', s)
         if not match:
             raise ValueError(f'invalid GTFS time: {s}')
@@ -426,7 +426,8 @@ def _map_stations(route: msts.Route, feed: gk.feed.Feed) -> dict:
     return stops.to_dict()['_mapped_station']
 
 
-def _name_trip(feed: gk.feed.Feed, trip: pd.Series):
+def _name_trip(feed: gk.feed.Feed, trip_id: str) -> str:
+    trip = feed.trips[feed.trips['trip_id'] == trip_id].squeeze()
     route = feed.routes[feed.routes['route_id'] == trip['route_id']].squeeze()
     route_name = \
         route.get('route_long_name', '') or route.get('route_short_name', '')
