@@ -88,6 +88,8 @@ def load_config(fp, install: msts.MSTSInstall, name: str) -> tt.Timetable:
     date = yd.get('date', None)
     if not isinstance(date, dt.date):
         raise RuntimeError("'date' missing or not readable by PyYAML")
+
+    # 'timezone'
     timezone = pytz.timezone(yd.get(
         'timezone',
         _TzF.closest_timezone_at(lat=route.latlon[0], lng=route.latlon[1])))

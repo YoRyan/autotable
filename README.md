@@ -2,12 +2,19 @@
 
 autotable is a procedural timetable generator for the free
 [Open Rails](http://openrails.org) train simulator. It uses
-[GTFS](https://developers.google.com/transit) data to recreate real-life schedules.
+[General Transit Feed Specification](https://developers.google.com/transit)
+data to recreate real-life schedules.
 
 As a timetable designer, you configure autotable through an easy-to-read YAML
 recipe file that defines the consist, path, and other control commands for each
-run. By sourcing data from GTFS feeds, autotable automates away the rote work of
-copying and pasting (or manually entering) individual arrival and departure times.
+run. Since GTFS was intended for passenger wayfinding and not dispatch or
+operations planning, it is still your responsibility to mock up paths, assign
+platforms, and define rolling stock. But by sourcing data from GTFS feeds,
+autotable automates away the rote work of copying and pasting (or manually
+entering) individual arrival and departure times.
+
+autotable also makes it easy to swap in your own equipment - just change out
+the `consist` fields - if you use a timetable recipe made by somebody else.
 
 autotable is a command-line tool written in Python 3. It uses
 [GTFS Kit](https://github.com/mrcagney/gtfs_kit) to parse GTFS feeds, and an
@@ -23,6 +30,27 @@ You'll find ready-to-run executables on the
 (I apologize for the large package size. The program itself is quite small, but
 the supporting libraries and geographic data take up several hundred more
 megabytes of space.)
+
+#### Usage
+
+autotable is a command-line program.
+
+```
+>autotable --help
+usage: autotable [-h] msts yaml
+
+Generate Open Rails timetables from GTFS data.
+
+positional arguments:
+  msts        path to MSTS installation or mini-route
+  yaml        path to timetable recipe file
+
+optional arguments:
+  -h, --help  show this help message and exit
+```
+
+The final timetable is written as a `.timetable-or` file with the same basename
+and parent directory as the recipe file.
 
 #### Install from source
 
@@ -45,24 +73,6 @@ redistributable Windows executables. If you wish to produce your own build, run:
 
 ```
 >python setup_exe.py build
-```
-
-#### Usage
-
-autotable is a command-line program.
-
-```
->autotable --help
-usage: autotable [-h] msts yaml
-
-Generate Open Rails timetables from GTFS data.
-
-positional arguments:
-  msts        path to MSTS installation or mini-route
-  yaml        path to timetable recipe file
-
-optional arguments:
-  -h, --help  show this help message and exit
 ```
 
 ### Recipe files
@@ -105,7 +115,35 @@ The name of the route's directory in ROUTES\\.
 #### date
 
 Select trips that overlap this date. Take care that your GTFS feeds are in
-service on this date.
+service on this date. Must be in ISO 8601 format so that it is readable by
+PyYAML.
+
+#### timezone
+
+*Default: timezone at route origin*
+
+Set the timezone all times in the timetable will be in reference to. Open Rails
+has no concept of timezones, so whichever timezone you define will apply to all
+trains at all times, regardless of their current positions.
+
+You would want to set this if you expect the majority of your operations to
+occur in a timezone different from the one implied by the route's start tile.
+Use a standardized timezone name for this field, like `America/Los_Angeles` or
+`America/New_York`.
+
+#### speed_unit
+
+*Default: m/s*
+
+Open Rails does not allow the use of multiple `#speed` rows in a single timetable.
+This means that all *speed* commands must use the same unit of measure. Specify one
+of the following here:
+
+- `ms`
+- `kph`
+- `mph`
+
+If you are not using any *speed* commands, this option has no effect.
 
 #### gtfs
 
@@ -180,17 +218,10 @@ Set *train* commands. The Open Rails manual
 [suggests](https://open-rails.readthedocs.io/en/stable/timetable.html#special-rows)
 using `$dec=2` or `$dec=3` for modern equipment.
 
-###### speed_mps
+###### speed
 
-Set *speed* commands in m/s units.
-
-###### speed_kph
-
-Set *speed* commands in km/h units.
-
-###### speed_mph
-
-Set *speed* commands in mi/h units.
+Set *speed* commands. All commands must use the same unit of measure, which is
+defined by the top-level `speed_unit` directive.
 
 ###### delay
 
