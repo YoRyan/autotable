@@ -1,0 +1,120 @@
+route: Surfliner2-3
+date: 2019-08-09
+gtfs:
+  - url: https://transitland-gtfs.s3.amazonaws.com/datastore-uploads/feed_version/d2483076c78b6d8b12cf67a1fae7c4f5fa5aaad4.zip
+    groups:
+
+        ##
+        ## Pacific Surfliner
+        ##
+      - selection:
+            route_id: '^78$'
+        note: $dec=2
+      - selection:
+            route_id: '^78$'
+            direction_id: '^1$'
+        station_map:
+            LAX: Track 12
+            OSD: Oceanside Track 2
+            OLT: Old Town Transit Center 1
+      - selection:
+            route_id: '^78$'
+            direction_id: '^0$'
+        station_map:
+            LAX: Track 11
+            OSD: Oceanside Track 1
+            OLT: Old Town Transit Center 2
+
+        # San Diego - LA
+      - selection:
+            trip_short_name: '^1?5\d\d$'
+            direction_id: '^1$'
+        path: YoRyan_LA-San
+        consist: Surfliner Default
+      - selection:
+            trip_short_name: '^1?5\d\d$'
+            direction_id: '^0$'
+        path: YoRyan_San-LA
+        consist: Surfliner Default
+
+        # San Diego - Goleta
+      - selection:
+            trip_short_name: '^1?7\d\d$'
+            direction_id: '^1$'
+        path: YoRyan_Gol-San
+        consist: Surfliner Default
+      - selection:
+            trip_short_name: '^1?7\d\d$'
+            direction_id: '^0$'
+        path: YoRyan_San-Gol
+        consist: Surfliner Default
+
+        # San Diego - San Luis Obispo
+      - selection:
+            trip_short_name: '^(774|796)$'
+        path: YoRyan_Slo-San
+        consist: Surfliner Default
+      - selection:
+            trip_short_name: '^(763|777)$'
+        path: YoRyan_San-Slo
+        consist: Surfliner Default
+
+        # LA - San Luis Obispo
+      - selection:
+            trip_short_name: '^759$'
+        path: YoRyan_LA-Slo
+        consist: Surfliner Default
+
+        ##
+        ## Coast Starlight
+        ##
+        
+        # Toward Los Angeles
+      - selection:
+            route_id: '^36924$'
+            direction_id: '^1$'
+        path: YoRyan_Slo-LA_LD
+        consist: class 50, 8 carriages
+        station_map:
+            LAX: Track 9
+
+        # Toward Seattle
+      - selection:
+            route_id: '^36924$'
+            direction_id: '^0$'
+        path: YoRyan_LA-Slo_LD
+        consist: class 50, 8 carriages
+        station_map:
+            LAX: Track 9
+
+        ##
+        ## Southwest Chief
+        ##
+        
+        # Toward Los Angeles
+      - selection:
+            route_id: '^51$'
+            direction_id: '^0$'
+        path: YoRyan_Ful-LA_LD
+        consist: class 50, 8 carriages
+        station_map:
+            LAX: Track 10
+
+        # Toward Chicago
+      - selection:
+            route_id: '^51$'
+            direction_id: '^1$'
+        path: YoRyan_LA-Ful_LD
+        consist: class 50, 8 carriages
+        station_map:
+            LAX: Track 10
+
+    station_map:
+        BUR: Burbank Airport
+
+station_commands:
+    "": $stoptime=60 # override the default 3-minute waiting time
+    Track 3: $stoptime=120
+    Track 4: $stoptime=120
+    Track 8: $stoptime=120
+    San Diego: $stoptime=120
