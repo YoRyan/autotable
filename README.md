@@ -5,6 +5,10 @@ autotable is a procedural timetable generator for the free
 [General Transit Feed Specification](https://developers.google.com/transit)
 data to recreate real-life schedules.
 
+![Console screenshot](https://raw.githubusercontent.com/wiki/yoryan/autotable/demo_console.jpg)
+
+![Timetable CSV screenshot](https://raw.githubusercontent.com/wiki/yoryan/autotable/demo_csv.jpg)
+
 As a timetable designer, you configure autotable through an easy-to-read YAML
 recipe file that defines the consist, path, and other control commands for each
 run. Since GTFS was intended for passenger wayfinding and not dispatch or
