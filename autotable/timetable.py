@@ -2,13 +2,12 @@
 import csv
 import datetime as dt
 import re
-from collections import Counter, namedtuple
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections import namedtuple
 from dataclasses import dataclass
 from enum import Enum
-from itertools import takewhile
+from functools import reduce
 
-from more_itertools import ilen, quantify, pairwise
+from more_itertools import pairwise
 
 from autotable.mstsinstall import Consist, Route
 
@@ -151,66 +150,28 @@ class Timetable:
                  *(trip.dispose_commands for trip in ordered_trips))
 
 
-def _order_stations(trips: list, stations: iter) -> list:
-    sm_trips = \
-        Counter(tuple(stop.station for stop in trip.stops) for trip in trips)
-    with ProcessPoolExecutor() as executor:
-        order = (next(stations),)
-        for station in stations:
-            candidates = (order[0:i] + (station,) + order[i:]
-                          for i in range(len(order) + 1))
-            future_to_key = \
-                {executor.submit(_station_order_cost, cand, sm_trips):
-                 cand for cand in candidates}
-            best_future = max(
-                as_completed(future_to_key), key=lambda future: future.result())
-            order = future_to_key[best_future]
-        return order
+def _order_stations(trips, stations):
+    def add_trip(current_order, trip):
+        def merge_in(order):
+            return list(merge_inb(order))
 
+        current_idx = {station: i for i, station in enumerate(current_order)}
+        def merge_inb(order):
+            ptr = 0
+            for station in order:
+                if station in current_idx:
+                    yield from current_order[ptr:current_idx[station]]
+                    ptr = max(ptr, current_idx[station] + 1)
+                yield station
+            yield from current_order[ptr:]
 
-def _station_order_cost(compare_order: tuple, trip_orders: Counter) -> int:
-    def trip_cost(compare_order: tuple, trip_order: tuple) -> int:
-        compare_index = {station: i for i, station in enumerate(compare_order)}
-        trip_index = {station: i for i, station in enumerate(trip_order)}
+        def score(order):
+            idx = {station: i for i, station in enumerate(order)}
+            return sum(1 if idx[s1] < idx[s2] else 0 for s1, s2
+                       in pairwise(filter((lambda s: s in idx), current_order)))
 
-        trip_set = set(trip_order)
-        common_stations = [s for s in compare_order if s in trip_set]
-        if len(common_stations) == 0:
-            length = 0
-        else:
-            length = ilen(takewhile(lambda s: s != common_stations[-1],
-                                    iter(compare_order)))
+        trip_order = [stop.station for stop in trip.stops]
+        return max(
+            merge_in(trip_order), merge_in(list(reversed(trip_order))), key=score)
 
-        forward = (
-            (quantify(trip_index[s1] < trip_index[s2]
-                      for s1, s2 in pairwise(common_stations))
-                 - quantify(trip_index[s1] > trip_index[s2]
-                            for s1, s2 in pairwise(common_stations))),
-            0,
-            quantify(compare_index[s1] + 1 == compare_index[s2]
-                     for s1, s2 in pairwise(common_stations)),
-            (-quantify(trip_index[s1] + 1 != trip_index[s2]
-                       for s1, s2 in pairwise(common_stations))
-                 - length))
-        backward = (
-            (quantify(trip_index[s1] > trip_index[s2]
-                      for s1, s2 in pairwise(common_stations))
-                 - quantify(trip_index[s1] < trip_index[s2]
-                            for s1, s2 in pairwise(common_stations))),
-            -1,
-            quantify(compare_index[s1] == compare_index[s2] + 1
-                     for s1, s2 in pairwise(common_stations)),
-            (-quantify(trip_index[s1] != trip_index[s2] + 1
-                       for s1, s2 in pairwise(common_stations))
-                 - length))
-        return max(forward, backward)
-
-    trip_costs = (n*trip_cost(compare_order, trip_order)
-                  for trip_order, n in trip_orders.items())
-    try:
-        cost = next(trip_costs)
-    except StopIteration:
-        return 0.0
-    for t in trip_costs:
-        cost = tuple(x + y for x, y in zip(cost, t))
-    return cost
+    return reduce(add_trip, trips, [])
