@@ -4,7 +4,6 @@ import re
 import typing as typ
 from argparse import ArgumentParser
 from collections import Counter, defaultdict
-from copy import copy
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import chain, tee
