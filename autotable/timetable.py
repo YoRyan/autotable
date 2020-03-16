@@ -152,6 +152,7 @@ class Timetable:
 
 
 def _order_stations(trips: typ.Iterable[Trip]) -> typ.Sequence[Station]:
+    # This greedy algorithm sometimes gets the order wrong, but it's fast.
     def add_trip(current_order: typ.Sequence[Station], trip: Trip) \
             -> typ.Sequence[Station]:
         def merge_in(order: typ.Iterable[Station]) -> typ.List[Station]:
@@ -163,19 +164,25 @@ def _order_stations(trips: typ.Iterable[Trip]) -> typ.Sequence[Station]:
             ptr = 0
             for station in order:
                 if station in current_idx:
-                    yield from current_order[ptr:current_idx[station]]
-                    ptr = max(ptr, current_idx[station] + 1)
-                yield station
+                    newptr = max(ptr, current_idx[station] + 1)
+                    yield from current_order[ptr:newptr]
+                    ptr = newptr
+                else:
+                    yield station
             yield from current_order[ptr:]
 
-        def score(order: typ.Iterable[Station]) -> int:
+        def score(order: typ.Iterable[Station],
+                  compare_to: typ.Iterable[Station]) -> int:
             idx = {station: i for i, station in enumerate(order)}
-            return \
-                quantify(idx[s1] < idx[s2] for s1, s2
-                         in pairwise(filter((lambda s: s in idx), current_order)))
+            return quantify(idx[s1] < idx[s2] for s1, s2
+                            in pairwise(compare_to))
 
-        trip_order = [stop.station for stop in trip.stops]
-        return max(
-            merge_in(trip_order), merge_in(list(reversed(trip_order))), key=score)
+        fwd_order = tuple(stop.station for stop in trip.stops)
+        fwd_merged = merge_in(fwd_order)
+        bwd_order = tuple(reversed(fwd_order))
+        bwd_merged = merge_in(bwd_order)
+        return (fwd_merged
+                if score(fwd_merged, fwd_order) >= score(bwd_merged, bwd_order)
+                else bwd_merged)
 
     return reduce(add_trip, trips, [])
