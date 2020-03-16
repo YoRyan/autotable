@@ -2,47 +2,30 @@
 import csv
 import datetime as dt
 import re
-from collections import namedtuple
+import typing as typ
 from dataclasses import dataclass
 from enum import Enum
 from functools import reduce
 
-from more_itertools import pairwise
+from more_itertools import pairwise, quantify
 
-from autotable.mstsinstall import Consist, Route
+from autotable.mstsinstall import Consist, Route, Station
 
 
 @dataclass
-class Trip:
-    name: str
-    stops: list
-    path: Route.Path
-    consist: list
-    start_offset: int
-    start_commands: str
-    note_commands: str
-    speed_commands: str
-    delay_commands: str
-    station_commands: dict
-    dispose_commands: str
-
-    def start_time(self):
-        if len(self.stops) < 1:
-            return None
-
-        first_stop = self.stops[0].arrival
-        return first_stop + dt.timedelta(seconds=self.start_offset)
-
-
-Stop = namedtuple('Stop', ['station', 'comment', 'arrival', 'departure'])
+class Stop:
+    station: Station
+    comment: str
+    arrival: dt.datetime
+    departure: dt.datetime
 
 
 @dataclass
 class ConsistComponent:
     consist: Consist
-    reverse: False
+    reverse: bool
 
-    def __str__(self):
+    def __str__(self) -> str:
         if re.search(r'[\+\$]', self.consist.id):
             if self.reverse:
                 return f'<{self.consist.id}>$reverse'
@@ -52,6 +35,25 @@ class ConsistComponent:
             return f'{self.consist.id} $reverse'
         else:
             return self.consist.id
+
+
+@dataclass
+class Trip:
+    name: str
+    stops: typ.Sequence[Stop]
+    path: Route.TrainPath
+    consist: typ.Sequence[ConsistComponent]
+    start_offset: int
+    start_commands: str
+    note_commands: str
+    speed_commands: str
+    delay_commands: str
+    station_commands: typ.Mapping[Station, str]
+    dispose_commands: str
+
+    def start_time(self) -> dt.datetime:
+        first_stop = self.stops[0].arrival
+        return first_stop + dt.timedelta(seconds=self.start_offset)
 
 
 class SpeedUnit(Enum):
@@ -65,22 +67,21 @@ class Timetable:
     name: str
     route: Route
     date: dt.date
-    tz: dt.timezone
-    trips: list
-    station_commands: {}
+    tzinfo: dt.tzinfo
+    trips: typ.Sequence[Trip]
+    station_commands: typ.Mapping[Station, str]
     speed_unit: SpeedUnit
 
-    def write_csv(self, fp):
+    def write_csv(self, fp: typ.TextIO) -> None:
         # csv settings per the May 2017 timetable document
         # http://www.elvastower.com/forums/index.php?/topic/30326-update-timetable-mode-signalling/
         writer = csv.writer(fp, delimiter='\t', quoting=csv.QUOTE_NONE)
-        def writerow(*args): writer.writerow(args)
+        def writerow(*args) -> None: writer.writerow(args)
 
         def strftime(dt: dt.datetime) -> str:
-            return dt.astimezone(self.tz).strftime('%H:%M')
+            return dt.astimezone(self.tzinfo).strftime('%H:%M')
 
-        ordered_stations = _order_stations(
-            self.trips, iter(self.route.stations().keys()))
+        ordered_stations = _order_stations(self.trips)
         ordered_trips = self.trips
 
         writerow('', '', '#comment', *(trip.name for trip in ordered_trips))
@@ -116,7 +117,7 @@ class Timetable:
             for stop in trip.stops:
                 stops_index[(i, stop.station)] = stop
 
-        def station_stops(s_name: str):
+        def station_stops(s_name: str) -> typ.Generator[str, None, None]:
             for i, trip in enumerate(ordered_trips):
                 stop = stops_index.get((i, s_name), None)
                 if stop is None:
@@ -133,7 +134,7 @@ class Timetable:
                     trip.station_commands.get('', ''))
                 yield f'{time} {commands}' if commands else time
 
-        def station_comments(s_name: str):
+        def station_comments(s_name: str) -> typ.Generator[str, None, None]:
             for i, _ in enumerate(ordered_trips):
                 stop = stops_index.get((i, s_name), None)
                 yield stop.comment if stop is not None else ''
@@ -150,13 +151,15 @@ class Timetable:
                  *(trip.dispose_commands for trip in ordered_trips))
 
 
-def _order_stations(trips, stations):
-    def add_trip(current_order, trip):
-        def merge_in(order):
+def _order_stations(trips: typ.Iterable[Trip]) -> typ.Sequence[Station]:
+    def add_trip(current_order: typ.Sequence[Station], trip: Trip) \
+            -> typ.Sequence[Station]:
+        def merge_in(order: typ.Iterable[Station]) -> typ.List[Station]:
             return list(merge_inb(order))
 
         current_idx = {station: i for i, station in enumerate(current_order)}
-        def merge_inb(order):
+        def merge_inb(order: typ.Iterable[Station]) \
+                -> typ.Generator[Station, None, None]:
             ptr = 0
             for station in order:
                 if station in current_idx:
@@ -165,10 +168,11 @@ def _order_stations(trips, stations):
                 yield station
             yield from current_order[ptr:]
 
-        def score(order):
+        def score(order: typ.Iterable[Station]) -> int:
             idx = {station: i for i, station in enumerate(order)}
-            return sum(1 if idx[s1] < idx[s2] else 0 for s1, s2
-                       in pairwise(filter((lambda s: s in idx), current_order)))
+            return \
+                quantify(idx[s1] < idx[s2] for s1, s2
+                         in pairwise(filter((lambda s: s in idx), current_order)))
 
         trip_order = [stop.station for stop in trip.stops]
         return max(

@@ -1,29 +1,43 @@
 # -*- coding: utf-8 -*-
 """A parser for Microsoft Train Simulator/Open Rails (SIMISA@@@) text files."""
 
-from collections import defaultdict
+import re
+import typing as typ
 from dataclasses import dataclass
 from enum import Enum
 from itertools import chain
-from re import match
 
 
 class ParserException(RuntimeError):
     def __init__(self, subject, message):
-        self.subject = subject
-        self.message = message
-    def __repr__(self):
+        self.subject: typ.Any = subject
+        self.message: str = message
+    def __repr__(self) -> str:
         if self.subject is None:
             return self.message
         else:
             return f'{self.message}: {self.subject}'
-    def __str__(self):
-        return self.__repr__()
+    def __str__(self) -> str: return self.__repr__()
 
 
 class Node:
-    def __str__(self):
-        return self.__repr__()
+    def __str__(self) -> str: return self.__repr__()
+
+@dataclass
+class Scalar(Node):
+    _value: object
+
+    Value = typ.Union[str, int, float]
+
+    def __repr__(self) -> str: return self._value.__repr__()
+
+    def value(self) -> Value:
+        if (isinstance(self._value, str)
+                or isinstance(self._value, int)
+                or isinstance(self._value, float)):
+            return self._value
+        else:
+            raise TypeError(f'unexpected scalar type: {type(self._value)}')
 
 @dataclass
 class Object(Node):
@@ -40,26 +54,28 @@ class Object(Node):
     """
 
     name: str
-    items: list
+    _items: typ.Sequence[Node]
 
-    def __repr__(self):
-        def indent(text):
+    Evaluated = typ.Union['Object', Scalar.Value]
+
+    def __repr__(self) -> str:
+        def indent(text: str) -> str:
             idnt = ' '*8
             return '\n'.join(idnt + l for l in text.splitlines())
         if all(isinstance(item, Scalar) or isinstance(item, Infix)
-               for item in self.items):
+               for item in self._items):
             return ' '.join([self.name, '(']
-                            + [str(item) for item in self.items]
+                            + [str(item) for item in self._items]
                             + [')'])
         else:
             return (f'{self.name} (\n'
-                    + '\n'.join(indent(str(item)) for item in self.items)
+                    + '\n'.join(indent(str(item)) for item in self._items)
                     + '\n)')
 
-    def __len__(self):
-        return len(self.items)
+    def __len__(self) -> int: return len(self._items)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: typ.Union[str, int]) \
+            -> typ.Union[Node, Evaluated, typ.Sequence[Evaluated]]:
         """When indexed by integer, this function will return the i'th (by source
         order) descendant, whether string, number, or Object. When indexed by
         string, it will return a list of all descendant Objects with a matching
@@ -72,56 +88,62 @@ class Object(Node):
         Object.
         """
         if isinstance(key, int):
-            return self.items[key]
+            return self._items[key]
         elif isinstance(key, str):
-            sel = [item for item in self.items
-                   if (isinstance(item, Object)
-                       and item.name.casefold() == key.casefold())]
+            sel = list(filter(
+                lambda item: (isinstance(item, Object)
+                              and item.name.casefold() == str(key).casefold()),
+                self._items))
             if sel == []:
                 raise KeyError
             elif len(sel) == 1:
                 item = sel[0]
-                if (isinstance(item, Object) and len(item) == 1
-                        and not isinstance(item[0], Object)):
-                    return Object._evaluate(item[0])
+                if isinstance(item, Object) and len(item) == 1:
+                    single = item._items[0]
+                    return Object._evaluate(
+                        item if isinstance(single, Object) else single)
                 else:
                     return Object._evaluate(item)
             else:
                 return [Object._evaluate(item) for item in sel]
 
-    def __contains__(self, item):
+    def __contains__(self, item: str) -> bool:
         return any(isinstance(i, Object) and i.name.casefold() == item.casefold()
-                   for i in self.items)
+                   for i in self._items)
 
-    def values(self):
+    def get(self, key: str, default: typ.Any) -> typ.Any:
+        return self[key] if key in self else default
+
+    def values(self) -> typ.Sequence[Evaluated]:
         """Get a list of all descendants that are not other Objects.
 
         Preserves source order, but provides no information about the positions
         of excluded Objects.
         """
-        sel = [item for item in self.items if not isinstance(item, Object)]
+        sel = [item for item in self._items if not isinstance(item, Object)]
         return [Object._evaluate(item) for item in sel]
 
-    def _evaluate(item):
+    def _evaluate(item: Node) -> Evaluated:
         if isinstance(item, Object):
             return item
         elif isinstance(item, Scalar):
-            return item.value
+            return item.value()
         elif isinstance(item, Infix):
             if item.op == Op.PLUS:
-                return Object._evaluate(item.lchild) + Object._evaluate(item.rchild)
+                leval = Object._evaluate(item.lchild)
+                reval = Object._evaluate(item.rchild)
+                if isinstance(leval, str) and isinstance(reval, str):
+                    return leval + reval
+                elif isinstance(leval, int) and isinstance(reval, int):
+                    return leval + reval
+                elif isinstance(leval, float) and isinstance(reval, float):
+                    return leval + reval
+                else:
+                    raise TypeError(f"cannot add '{leval}' to '{reval}'")
             else:
                 assert False
         else:
             assert False
-
-@dataclass
-class Scalar(Node):
-    value: object
-    def __add__(self, other):
-        return Scalar(self.value + other.value)
-    def __repr__(self):
-        return self.value.__repr__()
 
 class Op(Enum):
     PLUS = 0
@@ -131,7 +153,7 @@ class Infix(Node):
     lchild: Node
     op: Op
     rchild: Node
-    def __repr__(self):
+    def __repr__(self) -> str:
         if self.op == Op.PLUS:
             op_s = '+'
         else:
@@ -139,63 +161,50 @@ class Infix(Node):
         return f'{self.lchild}{op_s}{self.rchild}'
 
 
-def load(fp):
+def load(fp: typ.TextIO):
     """Deserialize the file-like object ``fp``."""
     return _parse(chain.from_iterable(fp))
 
 
-def loads(s):
+def loads(s: typ.Iterable[str]):
     """Deserialize the string ``s``."""
     return _parse(s)
 
 
-def _parse(s):
-
+def _parse(s: typ.Iterable[str]):
     class Token:
-        def __str__(self):
-            return self.__repr__()
+        def __str__(self) -> str: return self.__repr__()
 
     @dataclass
     class HeaderToken(Token):
         string: str
-        RE = r'SIMISA@@@@@@@@@@JINX0(\w)(\d)t______'
-        def __post_init__(self):
-            assert HeaderToken.match(self.string)
-        def __repr__(self):
-            return self.string
-        def match(s): return match(HeaderToken.RE, s) is not None
+        def __repr__(self) -> str: return self.string
 
     class LParenToken(Token):
-        def __repr__(self):
-            return '('
+        def __repr__(self) -> str: return '('
 
     class RParenToken(Token):
-        def __repr__(self):
-            return ')'
+        def __repr__(self) -> str: return ')'
 
     class PlusToken(Token):
-        def __repr__(self):
-            return '+'
+        def __repr__(self) -> str: return '+'
 
     @dataclass
     class StringToken(Token):
         value: str
-        def __repr__(self):
-            return self.value.__repr__()
+        def __repr__(self) -> str: return self.value.__repr__()
 
     @dataclass
     class IntegerToken(Token):
         value: int
-        def __repr__(self):
-            return self.value.__repr__()
+        def __repr__(self) -> str: return self.value.__repr__()
 
     @dataclass
     class FloatToken(Token):
         value: float
-        def __repr__(self):
-            return self.value.__repr__()
+        def __repr__(self) -> str: return self.value.__repr__()
 
-    def lexer(chars):
+    def lexer(chars: typ.Iterable[str]) -> typ.Generator[Token, None, None]:
         class State(Enum):
             NORMAL = 0
             LITERAL = 10
@@ -203,19 +212,21 @@ def _parse(s):
             QUOTE_ESCAPE = 12
             COMMENT_SLASH = 20
             COMMENT = 21
-        state = State.NORMAL
-        lexeme = None
-        def evaluate():
+        state: State = State.NORMAL
+        lexeme: typ.Optional[str] = None
+        def evaluate() -> Token:
             nonlocal state, lexeme
+            assert lexeme is not None
+            ret: Token
             if state == State.LITERAL:
                 # Cheat the SIMISA@@@ header by treating it as a StringToken.
-                if HeaderToken.match(lexeme):
+                if re.match(r'SIMISA@@@@@@@@@@JINX0(\w)(\d)t______', lexeme):
                     ret = HeaderToken(lexeme)
-                elif match(r'[a-fA-F\d]{8}$', lexeme):
+                elif re.match(r'[a-fA-F\d]{8}$', lexeme):
                     ret = IntegerToken(int(lexeme, 16))
-                elif match(r'-?\d+$', lexeme):
+                elif re.match(r'-?\d+$', lexeme):
                     ret = IntegerToken(int(lexeme, 10))
-                elif match(r'-?(\d*\.\d+|\d+\.\d*)$', lexeme):
+                elif re.match(r'-?(\d*\.\d+|\d+\.\d*)$', lexeme):
                     ret = FloatToken(float(lexeme))
                 else:
                     ret = StringToken(lexeme)
@@ -246,6 +257,7 @@ def _parse(s):
             elif state == State.LITERAL:
                 if (ch.isalpha() or ch.isnumeric() or ch == '.' or ch == '_'
                         or ch == '-' or ch == '@' or ch == '+'):
+                    assert lexeme is not None
                     lexeme += ch
                 elif ch == '(':
                     yield evaluate()
@@ -268,8 +280,10 @@ def _parse(s):
                 elif ch == '"':
                     yield evaluate()
                 else:
+                    assert lexeme is not None
                     lexeme += ch
             elif state == State.QUOTE_ESCAPE:
+                assert lexeme is not None
                 if ch == 'n':
                     lexeme += '\n'
                 else:
@@ -286,14 +300,14 @@ def _parse(s):
         if lexeme is not None:
             yield evaluate()
 
-    def parens(itokens):
+    def parens(itokens: typ.Iterable[Token]) -> typ.Generator[Node, None, None]:
         class State(Enum):
             NORMAL = 0
             STRING_L = 1
             SCALAR_L = 2
             INFIX_PLUS = 10
-        state = State.NORMAL
-        last = None
+        state: State = State.NORMAL
+        last: typ.Optional[Node] = None
         for token in itokens:
             if state == State.NORMAL:
                 if isinstance(token, StringToken):
@@ -310,8 +324,11 @@ def _parse(s):
                 else:
                     raise ParserException(token, 'unexpected token')
             elif state == State.STRING_L:
+                assert last is not None
                 if isinstance(token, LParenToken):
-                    yield Object(last.value, list(parens(itokens)))
+                    if not isinstance(last, Scalar):
+                        raise ParserException(last, 'expected a literal token')
+                    yield Object(str(last.value()), list(parens(itokens)))
                     last = None
                     state = State.NORMAL
                 elif isinstance(token, StringToken):
@@ -348,6 +365,7 @@ def _parse(s):
                 else:
                     raise ParserException(token, 'unexpected token')
             elif state == State.INFIX_PLUS:
+                assert last is not None
                 if isinstance(token, StringToken):
                     last = Infix(last, Op.PLUS, Scalar(token.value))
                     state = State.STRING_L
