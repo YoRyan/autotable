@@ -6,6 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import pyproj as pp # type: ignore
+from more_itertools import one
 
 import autotable.kujufile as kf
 
@@ -63,8 +64,7 @@ class Route:
             self.latlon = _latlon(tile_x, tile_z, ew, ns)
 
     def __init__(self, path: Path, encoding=ENCODING):
-        df = next(child for child in path.iterdir()
-                  if child.suffix.casefold() == '.trk')
+        df = one(_echild(path, 'trk'))
         with open(df, encoding=encoding) as fp:
             d = kf.load(fp)
         desc = d['Tr_RouteFile']
@@ -100,8 +100,7 @@ class Route:
 
     @lru_cache(maxsize=1)
     def train_paths(self) -> typ.Mapping[Ident, TrainPath]:
-        route_paths = (child for child in _ichild(self.path, 'paths').iterdir()
-                       if child.suffix.casefold() == '.pat'.casefold())
+        route_paths = _echild(_ichild(self.path, 'paths'), 'pat')
         with ProcessPoolExecutor() as executor:
             futures = []
             for path in route_paths:
@@ -141,9 +140,8 @@ class MSTSInstall:
 
     @lru_cache(maxsize=1)
     def consists(self) -> typ.Mapping[Ident, Consist]:
-        con_files = (child for child in _ichild(_ichild(self.path, 'trains'),
-                                                'consists').iterdir()
-                     if child.suffix.casefold() == '.con'.casefold())
+        con_files = \
+            _echild(_ichild(_ichild(self.path, 'trains'), 'consists'), 'con')
         with ProcessPoolExecutor() as executor:
             return {consist.id: consist
                     for consist in executor.map(Consist, con_files)}
@@ -153,8 +151,14 @@ class MSTSInstall:
 
 
 def _ichild(path: Path, name: str) -> Path:
-    return next(child for child in path.iterdir()
-                if child.name.casefold() == name.casefold())
+    matches = (child for child in path.iterdir()
+               if child.name.casefold() == name.casefold())
+    return one(matches, too_short=FileNotFoundError, too_long=LookupError)
+
+
+def _echild(path: Path, extension: str) -> typ.Iterable[Path]:
+    suffix = f'.{extension.casefold()}'
+    return (child for child in path.iterdir() if child.suffix.casefold() == suffix)
 
 
 def _latlon(tile_x: int, tile_z: int, ew: float, ns: float) \
