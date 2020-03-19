@@ -64,7 +64,7 @@ class Route:
             self.latlon = _latlon(tile_x, tile_z, ew, ns)
 
     def __init__(self, path: Path, encoding=ENCODING):
-        df = one(_echild(path, 'trk'))
+        df = one(_echildren(path, 'trk'))
         with open(df, encoding=encoding) as fp:
             d = kf.load(fp)
         desc = d['Tr_RouteFile']
@@ -89,10 +89,8 @@ class Route:
             d = kf.load(fp)
         table = d['TrItemTable']
 
-        with ProcessPoolExecutor() as executor:
-            platforms = executor.map(Route.PlatformItem, table['PlatformItem'])
         res = defaultdict(list)
-        for platform in platforms:
+        for platform in _pmap(table['PlatformItem'], Route.PlatformItem):
             res[platform.station].append(platform)
         return res
 
@@ -100,14 +98,9 @@ class Route:
 
     @lru_cache(maxsize=1)
     def train_paths(self) -> typ.Mapping[Ident, TrainPath]:
-        route_paths = _echild(_ichild(self.path, 'paths'), 'pat')
-        with ProcessPoolExecutor() as executor:
-            futures = []
-            for path in route_paths:
-                futures.append(
-                    executor.submit(Route.TrainPath, path, encoding=self._encoding))
-            loaded_paths = [future.result() for future in as_completed(futures)]
-        return {path.id: path for path in loaded_paths}
+        route_paths = _echildren(_ichild(self.path, 'paths'), 'pat')
+        return {path.id: path for path
+                in _pmap(route_paths, Route.TrainPath, encoding=self._encoding)}
 
     def train_path(self, id: str) -> TrainPath:
         return self.train_paths()[Ident(id)]
@@ -130,10 +123,8 @@ class MSTSInstall:
 
     @lru_cache(maxsize=1)
     def routes(self) -> typ.Mapping[Ident, Route]:
-        route_dirs = (child for child in _ichild(self.path, 'routes').iterdir()
-                      if child.is_dir())
-        with ProcessPoolExecutor() as executor:
-            return {route.id: route for route in executor.map(Route, route_dirs)}
+        route_dirs = _dchildren(_ichild(self.path, 'routes'))
+        return {route.id: route for route in _pmap(route_dirs, Route)}
 
     def route(self, id: str) -> Route:
         return self.routes()[Ident(id)]
@@ -141,13 +132,28 @@ class MSTSInstall:
     @lru_cache(maxsize=1)
     def consists(self) -> typ.Mapping[Ident, Consist]:
         con_files = \
-            _echild(_ichild(_ichild(self.path, 'trains'), 'consists'), 'con')
-        with ProcessPoolExecutor() as executor:
-            return {consist.id: consist
-                    for consist in executor.map(Consist, con_files)}
+            _echildren(_ichild(_ichild(self.path, 'trains'), 'consists'), 'con')
+        return {consist.id: consist for consist in _pmap(con_files, Consist)}
 
     def consist(self, id: str) -> Consist:
         return self.consists()[Ident(id)]
+
+
+
+_T = typ.TypeVar('_T')
+_U = typ.TypeVar('_U')
+
+def _pmap(inputs: typ.Iterable[_T], fn: typ.Callable[..., _U], *args, **kwargs) \
+        -> typ.Generator[_U, None, None]:
+    with ProcessPoolExecutor() as executor:
+        futures = [executor.submit(fn, input, *args, **kwargs) for input in inputs]
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+            except:
+                pass # Just eat exceptions.
+            else:
+                yield result
 
 
 def _ichild(path: Path, name: str) -> Path:
@@ -156,9 +162,13 @@ def _ichild(path: Path, name: str) -> Path:
     return one(matches, too_short=FileNotFoundError, too_long=LookupError)
 
 
-def _echild(path: Path, extension: str) -> typ.Iterable[Path]:
+def _echildren(path: Path, extension: str) -> typ.Iterable[Path]:
     suffix = f'.{extension.casefold()}'
     return (child for child in path.iterdir() if child.suffix.casefold() == suffix)
+
+
+def _dchildren(path: Path) -> typ.Iterable[Path]:
+    return (child for child in path.iterdir() if child.is_dir())
 
 
 def _latlon(tile_x: int, tile_z: int, ew: float, ns: float) \
