@@ -359,7 +359,7 @@ def _filter_trips(df: pd.DataFrame, filters: typ.Mapping[str, str]) -> pd.DataFr
                         'trip_short_name', 'direction_id', 'block_id',
                         'shape_id', 'wheelchair_accessible', 'bikes_allowed']:
             raise KeyError(f'not a valid GTFS trip attribute: {prop}')
-        df = df[df[prop].astype(str).str.match(regex)]
+        df = df[df[prop].astype(str).str.contains(regex)]
     return df
 
 
