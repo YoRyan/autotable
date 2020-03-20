@@ -485,10 +485,14 @@ def _map_stations(route: msts.Route, feed: gk.feed.Feed) \
 def _name_trip(feed: gk.feed.Feed, trip_id: _TripId) -> str:
     trip = feed.trips[feed.trips['trip_id'] == trip_id].squeeze()
     route = feed.routes[feed.routes['route_id'] == trip['route_id']].squeeze()
-    route_name = \
-        route.get('route_long_name', '') or route.get('route_short_name', '')
-    name = trip.get('trip_short_name', '') or trip_id
-    headsign = trip.get('trip_headsign', '')
+
+    def get(series: pd.Series, prop: str) -> typ.Any:
+        val = series.get(prop, None)
+        return None if pd.isna(val) else val
+
+    route_name = get(route, 'route_long_name') or get(route, 'route_short_name')
+    name = get(trip, 'trip_short_name') or trip_id
+    headsign = get(trip, 'trip_headsign')
     if route_name:
         return f'{route_name} {name}'
     elif headsign:
