@@ -386,7 +386,9 @@ def _is_trip_start(feed: gk.feed.Feed, trip_id: _TripId, date: dt.date) -> bool:
     trip = feed.trips[feed.trips['trip_id'].astype(str) == trip_id].squeeze()
     service_id = trip['service_id']
     if (service_id, date) in calendar_dates.index:
-        exception = exceptions.at[(service_id, date), 'exception_type']
+        # Need to call to_frame() because multi-indexing is broken for a
+        # pandas Series, see https://github.com/pandas-dev/pandas/issues/26989
+        exception = exceptions.to_frame().at[(service_id, date), 'exception_type']
         if exception == 1:
             return True
         elif exception == 2:
