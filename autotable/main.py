@@ -90,10 +90,12 @@ def main() -> None:
     print(f'Route: {timetable.route.name}')
     print(f'Name: {timetable.name}')
     print(f'{len(timetable.trips)} total trips')
+
     print('Writing timetable ...')
-    with open(args.yaml.parent/f'{args.yaml.stem}.timetable-or', 'wt',
-              newline='', encoding=msts.ENCODING) as fp:
+    outp = args.yaml.parent/f'{args.yaml.stem}.timetable-or'
+    with open(outp, 'wt', newline='', encoding=msts.ENCODING) as fp:
         timetable.write_csv(fp)
+    print(f'Saved to: {outp}')
 
 
 def load_config(fp: typ.TextIO, install: msts.MSTSInstall, name: str) \
