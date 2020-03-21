@@ -56,7 +56,7 @@ class IndexedFeed:
         if feed.calendar_dates is not None:
             cd = feed.calendar_dates.copy()
             cd['service_id'] = cd['service_id'].astype(ServiceId)
-            cd['date'] = cd['date'].astype(str).apply(_strpdate)
+            cd['date'] = cd['date'].apply(_strpdate)
             cd['exception_type'] = cd['exception_type'].astype(int)
             self.calendar_dates = cd.set_index(['service_id', 'date'])
 
@@ -64,8 +64,8 @@ class IndexedFeed:
         if feed.calendar is not None:
             cal = feed.calendar.copy()
             cal['service_id'] = cal['service_id'].astype(ServiceId)
-            cal['start_date'] = cal['start_date'].astype(str).apply(_strpdate)
-            cal['end_date'] = cal['end_date'].astype(str).apply(_strpdate)
+            cal['start_date'] = cal['start_date'].apply(_strpdate)
+            cal['end_date'] = cal['end_date'].apply(_strpdate)
             cal['weekdays'] = cal.apply(_weekdays, axis='columns')
             self.calendar = cal.set_index('service_id')
 
@@ -93,10 +93,12 @@ def download_gtfs(url: str) -> gk.feed.Feed:
     return gtfs
 
 
-def _strptime(s: str) -> StopTime:
-    match = re.search(r'(\d?\d)\s*:\s*([012345]?\d)\s*:\s*([012345]?\d)', s)
+def _strptime(val: typ.Any) -> typ.Optional[StopTime]:
+    if pd.isna(val):
+        return None
+    match = re.search(r'(\d?\d)\s*:\s*([012345]?\d)\s*:\s*([012345]?\d)', str(val))
     if not match:
-        raise ValueError(f'invalid GTFS time: {s}')
+        raise ValueError(f'invalid GTFS time: {val}')
     hours = int(match.group(1))
     return StopTime(days_elapsed=hours//24,
                     time=dt.time(hour=hours%24,
@@ -104,8 +106,10 @@ def _strptime(s: str) -> StopTime:
                                  second=int(match.group(3))))
 
 
-def _strpdate(s: str) -> dt.date:
-    return dt.datetime.strptime(s.strip(), '%Y%m%d').date()
+def _strpdate(val: typ.Any) -> typ.Optional[dt.date]:
+    if pd.isna(val):
+        return None
+    return dt.datetime.strptime(str(val).strip(), '%Y%m%d').date()
 
 
 def _weekdays(row: pd.Series) -> typ.Tuple[bool, ...]:
