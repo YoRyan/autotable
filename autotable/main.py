@@ -10,11 +10,11 @@ from itertools import chain, tee
 from multiprocessing import freeze_support
 from pathlib import Path
 
+import more_itertools as mit
 import pandas as pd # type: ignore
 import pyproj as pp # type: ignore
 import pytz
 import yaml
-from more_itertools import first, ilen, take
 from timezonefinder import TimezoneFinder # type: ignore
 
 import autotable.gtfs as gtfs
@@ -223,10 +223,10 @@ def load_config(fp: typ.TextIO, install: msts.MSTSInstall, name: str) \
                 return None
 
             st1, st2, st3 = tee(_stop_times(ifeed, trip_id, map_station), 3)
-            if ilen(take(_MIN_STOPS, st1)) < _MIN_STOPS:
+            if mit.ilen(mit.take(_MIN_STOPS, st1)) < _MIN_STOPS:
                 return None
 
-            first_st = first(st2)
+            first_st = mit.first(st2)
             start_dt = dt.datetime.combine(
                 date + dt.timedelta(days=-first_st.arrival.days_elapsed),
                 first_st.arrival.time)
@@ -258,8 +258,9 @@ def load_config(fp: typ.TextIO, install: msts.MSTSInstall, name: str) \
                     arrival=arrival_dt,
                     departure=departure_dt)
 
-            return trip.finalize(_name_trip(ifeed, trip_id),
-                                 [make_stop(st) for st in st3])
+            stops = tuple(mit.unique_everseen((make_stop(st) for st in st3),
+                                              key=lambda stop: stop.station))
+            return trip.finalize(_name_trip(ifeed, trip_id), stops)
 
         grouped_trips = _reverse(trip_groups)
         for i in sorted(grouped_trips.keys()):
