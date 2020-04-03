@@ -379,7 +379,7 @@ def _map_stations(route: msts.Route, ifeed: gtfs.IndexedFeed) \
         -> typ.Mapping[gtfs.StopId, msts.Station]:
     @lru_cache(maxsize=64)
     def tokens(s: str) -> typ.Iterable[str]:
-        return re.split('[ \t:;,-]+', s.casefold())
+        return re.split('[ \t:;,-/]+', s.casefold())
 
     word_frequency = Counter(
         chain(*(tokens(s_name) for s_name in route.station_names())))
