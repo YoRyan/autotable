@@ -237,11 +237,12 @@ def load_config(fp: typ.TextIO, install: msts.MSTSInstall, name: str) \
 
             trip_row = ifeed.trips.loc[trip_id]
             route = ifeed.routes.loc[trip_row['route_id']]
-            agency = ifeed.agency.loc[route['agency_id']]
+            agency = (ifeed.agency.loc[route['agency_id']]
+                      if 'agency_id' in route else None)
             # Assume route and trip timezone are identical if the GTFS feed
             # doesn't specify one.
             trip_timezone = (_parse_timezone(agency['agency_timezone'], date)
-                             if agency['agency_timezone'] else timezone)
+                             if agency and agency['agency_timezone'] else timezone)
             def make_stop(st: _StopTime) -> tt.Stop:
                 start_date = start_dt.date()
                 arrival_dt = dt.datetime.combine(

@@ -37,12 +37,14 @@ class IndexedFeed:
         self.trips: pd.DataFrame = trips.set_index('trip_id')
 
         agency = feed.agency.copy()
-        agency['agency_id'] = agency['agency_id'].astype(AgencyId)
+        if 'agency_id' in agency:
+            agency['agency_id'] = agency['agency_id'].astype(AgencyId)
         self.agency: pd.DataFrame = agency.set_index('agency_id')
 
         routes = feed.get_routes()
         routes['route_id'] = routes['route_id'].astype(RouteId)
-        routes['agency_id'] = routes['agency_id'].astype(AgencyId)
+        if 'agency_id' in routes:
+            routes['agency_id'] = routes['agency_id'].astype(AgencyId)
         self.routes: pd.DataFrame = routes.set_index('route_id')
 
         st = feed.get_stop_times()
