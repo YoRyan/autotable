@@ -241,8 +241,9 @@ def load_config(fp: typ.TextIO, install: msts.MSTSInstall, name: str) \
                       if 'agency_id' in route else None)
             # Assume route and trip timezone are identical if the GTFS feed
             # doesn't specify one.
-            trip_timezone = (_parse_timezone(agency['agency_timezone'], date)
-                             if agency and agency['agency_timezone'] else timezone)
+            trip_timezone = (
+                _parse_timezone(agency['agency_timezone'], date)
+                if agency is not None and agency['agency_timezone'] else timezone)
             def make_stop(st: _StopTime) -> tt.Stop:
                 start_date = start_dt.date()
                 arrival_dt = dt.datetime.combine(
