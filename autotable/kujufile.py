@@ -208,17 +208,18 @@ def _parse(s: typ.Iterable[str]):
         class State(Enum):
             NORMAL = 0
             LITERAL = 10
-            QUOTE = 11
-            QUOTE_ESCAPE = 12
-            COMMENT_SLASH = 20
-            COMMENT = 21
+            LITERAL_SLASH = 11
+            QUOTE = 20
+            QUOTE_ESCAPE = 21
+            COMMENT_SLASH = 30
+            COMMENT = 31
         state: State = State.NORMAL
         lexeme: typ.Optional[str] = None
         def evaluate() -> Token:
             nonlocal state, lexeme
             assert lexeme is not None
             ret: Token
-            if state == State.LITERAL:
+            if state == State.LITERAL or state == State.LITERAL_SLASH:
                 # Cheat the SIMISA@@@ header by treating it as a StringToken.
                 if re.match(r'SIMISA@@@@@@@@@@JINX0(\w)(\d)t______', lexeme):
                     ret = HeaderToken(lexeme)
@@ -270,10 +271,16 @@ def _parse(s: typ.Iterable[str]):
                     state = State.QUOTE
                     lexeme = ''
                 elif ch == '/':
-                    yield evaluate()
-                    state = State.COMMENT_SLASH
+                    state = State.LITERAL_SLASH
                 else:
                     yield evaluate()
+            elif state == State.LITERAL_SLASH:
+                if ch == '/':
+                    yield evaluate()
+                    state = State.COMMENT
+                else:
+                    lexeme += '/'
+                    state = State.LITERAL
             elif state == State.QUOTE:
                 if ch == '\\':
                     state = State.QUOTE_ESCAPE
